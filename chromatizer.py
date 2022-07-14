@@ -9,10 +9,11 @@ Revision History   : 0
 
 """
 
-import PySimpleGUI as sg, sys, pathlib
-from pyaudio import PyAudio
+import PySimpleGUI as sg, sys, pathlib, numpy as np, pyaudio
 from scipy.interpolate import interp1d
+from scipy.ndimage import gaussian_filter1d
 from math import ceil
+from time import time, sleep
 
 
 windowIcon = None
@@ -50,6 +51,49 @@ def debugPrint(*args):
 
 def getPrefName(text):
     return sg.T(text, size=(18,1), justification='left')
+
+def interpolate(y, new_length):
+    """Intelligently resizes the array by linearly interpolating the values
+
+    Parameters
+    ----------
+    y : np.array
+        Array that should be resized
+
+    new_length : int
+        The length of the new interpolated array
+
+    Returns
+    -------
+    z : np.array
+        New array with length of new_length that contains the interpolated
+        values of y.
+    """
+    if len(y) == new_length:
+        return y
+    x_old = np.linspace(0, 1, len(y))
+    x_new = np.linspace(0, 1, new_length)
+    return np.interp(x_new, x_old, y)
+
+class expFilter:
+    """Simple exponential smoothing filter"""
+    def __init__(self, val=0.0, alpha_decay=0.5, alpha_rise=0.5):
+        """Small rise / decay factors = more smoothing"""
+        assert 0.0 < alpha_decay < 1.0, 'Invalid decay smoothing factor'
+        assert 0.0 < alpha_rise < 1.0, 'Invalid rise smoothing factor'
+        self.alpha_decay = alpha_decay
+        self.alpha_rise = alpha_rise
+        self.value = val
+
+    def update(self, value):
+        if isinstance(self.value, (list, np.ndarray, tuple)):
+            alpha = value - self.value
+            alpha[alpha > 0.0] = self.alpha_rise
+            alpha[alpha <= 0.0] = self.alpha_decay
+        else:
+            alpha = self.alpha_rise if value > self.value else self.alpha_decay
+        self.value = alpha * value + (1.0 - alpha) * self.value
+        return self.value
 
 class graphSlider():
     graph = []
@@ -147,10 +191,15 @@ class graphSlider():
 
 class chromatizer():
 
-    pa = PyAudio()
+    pa = pyaudio.PyAudio()
     audioDevices = {}
     window = []
     freqSlider = []
+    displayEffect = []
+    activeDevice = []
+    audioStream = []
+    noFrames = []
+    readTimeout = None
 
     preferences = sg.UserSettings(filename=str(getPrefFile()))
 
@@ -205,9 +254,71 @@ class chromatizer():
             if (self.pa.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
                 self.audioDevices[self.pa.get_device_info_by_host_api_device_index(0, i).get('name')] = i
         self.preferences['audioDevice'] = self.pa.get_default_input_device_info()['name']
+        self.getAudioStream()
     
+    def getFPS(self):
+        """Return the estimated frames per second
+
+        Returns the current estimate for frames-per-second (FPS).
+        FPS is estimated by measured the amount of time that has elapsed since
+        this function was previously called. The FPS estimate is low-pass filtered
+        to reduce noise.
+
+        This function is intended to be called one time for every iteration of
+        the program's main loop.
+
+        Returns
+        -------
+        fps : float
+            Estimated frames-per-second. This value is low-pass filtered
+            to reduce noise.
+        """
+        currTime = time() * 1000.0
+        dt = currTime - self.fpsTime
+        self.fpsTime = currTime
+        if dt == 0.0:
+            return self.fps.value
+        return self.fps.update(1000.0 / dt)
+
+    def audioEffect(self):
+        debugPrint('inAudioEffect')
+        audioData = np.fromstring(self.audioStream.read(self.noFrames, exception_on_overflow=False), dtype=np.int16)
+        debugPrint('Audio Data: ', audioData)
+
+    def rainbowEffect(self):
+        debugPrint('inRainbowEffect')
+
+    def singleEffect(self):
+        debugPrint('inSingleEffect')
+
+    def getEffectHandle(self):
+        if self.preferences['_displayEffect_'] == 'Audio':
+            self.displayEffect = self.audioEffect
+            self.readTimeout = 0
+        elif self.preferences['_displayEffect_'] == 'Rainbow':
+            self.displayEffect = self.rainbowEffect
+            self.readTimeout = 0
+        elif self.preferences['_displayEffect_'] == 'Single':
+            self.displayEffect = self.singleEffect
+            self.readTimeout = None
+
+    def getAudioStream(self):
+        deviceInfo = self.pa.get_device_info_by_index(self.audioDevices[self.preferences['audioDevice']])
+        self.noFrames = int(deviceInfo['defaultSampleRate'] // self.preferences['tgtFPS'])
+
+        if self.audioStream != []:
+            self.audioStream.stop_stream()
+            self.audioStream.close()
+        
+        self.audioStream = self.pa.open(format=pyaudio.paInt16, channels=1, rate=int(deviceInfo['defaultSampleRate']), input=True, input_device_index=self.audioDevices[self.preferences['audioDevice']], frames_per_buffer=self.noFrames)
+
+    def loopActions(self):
+        debugPrint('inLoopActions: ', self.displayEffect)
+        self.displayEffect()
+
     def closeActions(self):
         self.savePreferences()
+        self.pa.terminate()
 
     def displayPreferences(self):
         debugPrint('inDisplayPreferences')
@@ -388,6 +499,10 @@ class chromatizer():
         self.freqSlider = graphSlider(self.window['_freqGraph_'], sliderRange=(0,22000), sliders=[self.preferences['minFreq'], self.preferences['lowFreq'], self.preferences['highFreq'], self.preferences['maxFreq']],
                                         colors='S'+self.preferences['colorOrder'], relativeHeight=20, lineWidth=5, leftPad=15, rightPad=60)
 
+        self.fpsTime = time() * 1000.0
+        self.fps = expFilter(val=self.preferences['tgtFPS'], alpha_decay=0.2, alpha_rise=0.2)
+        self.getEffectHandle()
+
         #* Selecting tab from previous session 
         self.window[self.preferences['displayEffect']].select()
         self.window[self.preferences['activeDevice']].select()
@@ -396,7 +511,7 @@ class chromatizer():
 def main():
     cs = chromatizer()
     while True:      
-        event, values = cs.window.read()
+        event, values = cs.window.read(cs.readTimeout)
         # debugPrint(type(event))
         debugPrint(event, values)
         debugPrint(sg.user_settings())
@@ -414,8 +529,15 @@ def main():
             cs.preferences['maxFreq'] = cs.freqSlider.sliders[3]
             cs.displayPreferences()
             cs.window.refresh()
+        elif event == '_displayEffect_':
+            cs.preferences['_displayEffect_'] = values['_displayEffect_']
+            cs.getEffectHandle()
+            
         elif event == 'Save Preferences' or event == 'Save Settings' or event == '_mainTab_' or event == '_displayEffect_' or event == '_activeDevice_':
             cs.savePreferences()
+    
+        cs.loopActions()
+
     cs.window.close()
 
 if __name__ == "__main__":
