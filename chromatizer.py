@@ -12,9 +12,17 @@ Revision History   : 0
 import PySimpleGUI as sg, sys, pathlib
 from pyaudio import PyAudio
 from scipy.interpolate import interp1d
+from math import ceil
+
+
+windowIcon = None
+signatureImage = None
+
+debugOn = True
+colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080'}
+
 
 def getPrefFile() -> pathlib.Path:
-
     """
     Returns a parent directory path
     where persistent application data can be stored.
@@ -35,13 +43,6 @@ def getPrefFile() -> pathlib.Path:
     
     return filePath / "chromatizer/preferences.json"
 
-
-windowIcon = None
-signatureImage = None
-debugOn = True
-
-colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080'}
-
 def debugPrint(*args):
     if debugOn:
         print(*args)
@@ -52,36 +53,97 @@ def getPrefName(text):
 
 class graphSlider():
     graph = []
-    lines = {}
-    points = {}
-    indices = {}
+    figuresOfInterest = ()
+    areaOfInterest = ()
     graphSize = []
-    valueMap = []
+    posMap = []
+    frqGap = []
+    sliderRange = []
+    sliders = []
+    colors = []
+    idxMap = {}
     lineHeight = 6
     lineWidth = 5
+    textGap = 12
 
-    def __init__(self, graphInp, sliderRange=(1,100), sliders=(60), colors='C', relativeHeight=6, lineWidth=5, leftPad=10, rightPad=10):
-        self.graph = graphInp
-        self.graphSize = self.graph.CanvasSize
-        self.valueMap = interp1d([sliderRange[0], sliderRange[1]], [leftPad, self.graphSize[0] - rightPad])
-        self.lineHeight = relativeHeight
-        self.lineWidth = lineWidth
-        
+    def movePoints(self, mousePosition):
+        debugPrint('inMovePoints: ', self.graph.get_figures_at_location(mousePosition))
+        debugPrint('Mouse Position: ', mousePosition)
+        if mousePosition[0] in range(self.areaOfInterest[0], self.areaOfInterest[1]):
+            elements = self.graph.get_figures_at_location(mousePosition)
+            if len(elements):
+                currentPoint = [x for x in self.figuresOfInterest if x in elements]
+                debugPrint(currentPoint)
+                if len(currentPoint):
+                    sliderIdx = self.points.index(currentPoint[0]) - 2
+                    newFreq = int(self.frqMap(mousePosition[0]))
+                    self.setSlider(newFreq, sliderIdx)
+                    self.drawSlider()
+                    
+    def setSlider(self, newFrq, tgtIdx):
+        if newFrq in range(self.sliderRange[0], self.sliderRange[1]):
+            if tgtIdx<(len(self.sliders)-1) and self.sliders[tgtIdx + 1] - newFrq < self.frqGap:
+                if self.setSlider(newFrq + self.frqGap, tgtIdx + 1):
+                    self.sliders[tgtIdx] = newFrq
+                    return True
+                else:
+                    return False
+            elif tgtIdx>0 and newFrq - self.sliders[tgtIdx - 1] < self.frqGap:
+                if self.setSlider(newFrq - self.frqGap, tgtIdx - 1):
+                    self.sliders[tgtIdx] = newFrq
+                    return True
+                else:
+                    return False
+            else:
+                self.sliders[tgtIdx] = newFrq
+                return True
+
+    def drawSlider(self):
+        self.graph.erase()
+
         #* Creating lines
         # line[0] from sliderRange[0] to slider[0], line[1] from slider[0] to slider[1], line[2] from slider[1] to sliderRange[1]
-        for lineNo in range(0, len(sliders) + 1):
-            debugPrint('linePoints', (int(self.valueMap((lineNo==0)*sliderRange[0] + (lineNo!=0)*sliders[lineNo-1])), self.lineHeight), (int(self.valueMap((lineNo==len(sliders))*sliderRange[1] + (lineNo!=len(sliders))*sliders[lineNo%len(sliders)])), self.lineHeight))
-            self.lines[lineNo] = self.graph.DrawLine((int(self.valueMap((lineNo==0)*sliderRange[0] + (lineNo!=0)*sliders[lineNo-1])), self.lineHeight), (int(self.valueMap((lineNo==len(sliders))*sliderRange[1] + (lineNo!=len(sliders))*sliders[lineNo%len(sliders)])), self.lineHeight),
-                                                        color=colorMap[(lineNo!=len(sliders))*colors[lineNo%len(colors)] + (lineNo==len(sliders))*'S'], width=self.lineWidth)
+        for lineNo in range(0, len(self.sliders) + 1):
+            debugPrint('linePoints', (int(self.posMap((lineNo==0)*self.sliderRange[0] + (lineNo!=0)*self.sliders[lineNo-1])), self.lineHeight), (int(self.posMap((lineNo==len(self.sliders))*self.sliderRange[1] + (lineNo!=len(self.sliders))*self.sliders[lineNo%len(self.sliders)])), self.lineHeight))
+            self.lines[lineNo] = self.graph.draw_line((int(self.posMap((lineNo==0)*self.sliderRange[0] + (lineNo!=0)*self.sliders[lineNo-1])), self.lineHeight), (int(self.posMap((lineNo==len(self.sliders))*self.sliderRange[1] + (lineNo!=len(self.sliders))*self.sliders[lineNo%len(self.sliders)])), self.lineHeight),
+                                                        color=colorMap[(lineNo!=len(self.sliders))*self.colors[lineNo%len(self.colors)] + (lineNo==len(self.sliders))*'S'], width=self.lineWidth)
         
-        pointWidth = int(self.lineWidth*1.6)
-        self.points[0] = self.graph.DrawPoint((int(self.valueMap(sliderRange[0])), self.lineHeight), pointWidth, color=colorMap['S'])
-        self.points[1] = self.graph.DrawPoint((int(self.valueMap(sliderRange[1])), self.lineHeight), pointWidth, color=colorMap['S'])
-        for pointNo in range(2, 2 + len(sliders)):
+        textPad = self.lineHeight - self.textGap
+        self.pointLabels[0] = self.graph.draw_text(str(self.sliderRange[0]), (int(self.posMap(self.sliderRange[0])), textPad), color=colorMap['W'])
+        self.pointLabels[1] = self.graph.draw_text(str(self.sliderRange[1]), (int(self.posMap(self.sliderRange[1])), textPad), color=colorMap['W'])
+        textPad = self.lineHeight + self.textGap
+        for pointNo in range(2, 2 + len(self.sliders)):
             idx = pointNo - 2
-            self.points[pointNo] = self.graph.DrawPoint((int(self.valueMap(sliders[idx])), self.lineHeight), pointWidth, color=colorMap[colors[idx]])
-        
+            self.pointLabels[pointNo] = self.graph.draw_text(str(self.sliders[idx]), (int(self.posMap(self.sliders[idx])), textPad), color=colorMap[self.colors[idx]])
 
+        pointWidth = int(self.lineWidth*1.8)
+        self.points[0] = self.graph.draw_point((int(self.posMap(self.sliderRange[0])), self.lineHeight), pointWidth, color=colorMap['S'])
+        self.points[1] = self.graph.draw_point((int(self.posMap(self.sliderRange[1])), self.lineHeight), pointWidth, color=colorMap['S'])
+        for pointNo in range(2, 2 + len(self.sliders)):
+            idx = pointNo - 2
+            self.points[pointNo] = self.graph.draw_point((int(self.posMap(self.sliders[idx])), self.lineHeight), pointWidth, color=colorMap[self.colors[idx]])
+
+        self.figuresOfInterest = tuple(self.points[2:])
+
+    def __init__(self, graphInp, sliderRange=(1,100), sliders=[60], colors='C', relativeHeight=6, lineWidth=5, leftPad=10, rightPad=10):
+        self.graph = graphInp
+        self.graphSize = self.graph.CanvasSize
+        self.areaOfInterest = (leftPad, self.graphSize[0] - rightPad)
+        self.posMap = interp1d([sliderRange[0], sliderRange[1]], [self.areaOfInterest[0], self.areaOfInterest[1]])
+        self.frqMap = interp1d([leftPad, self.graphSize[0] - rightPad], [sliderRange[0], sliderRange[1]])
+        self.lineHeight = relativeHeight
+        self.lineWidth = lineWidth
+        self.sliderRange = sliderRange
+        self.sliders = sliders
+        self.colors = colors
+        self.lines = [None] * (len(sliders) + 1)
+        self.points = [None] * (len(sliders) + 2)
+        self.pointLabels = [None] * (len(sliders) + 2)
+        
+        self.drawSlider()
+
+        self.frqGap = ceil(((sliderRange[1] - sliderRange[0])/(self.areaOfInterest[1] - self.areaOfInterest[0]))*(self.graph.get_bounding_box(3*len(sliders)+5)[1][0] - self.graph.get_bounding_box(3*len(sliders)+5)[0][0]))
+        
 
 class chromatizer():
 
@@ -147,6 +209,45 @@ class chromatizer():
     def closeActions(self):
         self.savePreferences()
 
+    def displayPreferences(self):
+        debugPrint('inDisplayPreferences')
+        self.window['_audioDevice_'].update(value = self.preferences['audioDevice']) 
+        self.window['_stripSaver_'].update(value = self.preferences['stripSaver'])
+        self.window['_energyDisplay_'].update(value = self.preferences['energyDisplay'])
+        self.window['_scrollDisplay_'].update(value = self.preferences['scrollDisplay'])
+        self.window['_spectrumDisplay_'].update(value = self.preferences['spectrumDisplay'])
+        self.window['_colorOrder_'].update(value = self.preferences['colorOrder'])
+        # self.preferences['brightness'].update(value = 100) #! Change it to local variable
+        self.window['_dispFPS_'].update(value = self.preferences['dispFPS'])
+        self.window['_noPixels_'].update(value = str(self.preferences['noPixels']))
+        self.window['_tgtFPS_'].update(value = str(self.preferences['tgtFPS']))
+        self.window['_noFFT_'].update(value = str(self.preferences['noFFT']))
+        self.window['_gainLimit_'].update(value = str(self.preferences['gainLimit']))
+        self.window['_volTol_'].update(value = str(self.preferences['volTol']))
+        self.window['_audioRoll_'].update(value = str(self.preferences['audioRoll']))
+        self.window['_adAudio_'].update(value = str(self.preferences['adAudio']))
+        self.window['_adGain_'].update(value = str(self.preferences['adGain']))
+        self.window['_adLED_'].update(value = str(self.preferences['adLED']))
+        self.window['_gammaTable_'].update(value = self.preferences['gammaTable'])
+        self.window['_clrClose_'].update(value = self.preferences['clrClose'])
+        self.window['_minFreq_'].update(value = str(self.preferences['minFreq']))
+        self.window['_lowFreq_'].update(value = str(self.preferences['lowFreq']))
+        self.window['_highFreq_'].update(value = str(self.preferences['highFreq']))
+        self.window['_maxFreq_'].update(value = str(self.preferences['maxFreq']))
+        self.window['_arAudio_'].update(value = str(self.preferences['arAudio']))
+        self.window['_arGain_'].update(value = str(self.preferences['arGain']))
+        self.window['_arLED_'].update(value = str(self.preferences['arLED']))
+        self.window['_espUDPIP_'].update(value = self.preferences['espUDPIP'])
+        self.window['_espUDPPort_'].update(value = str(self.preferences['espUDPPort']))
+        self.window['_espSoftGamma_'].update(value = self.preferences['espSoftGamma'])
+        self.window['_rpLEDPin_'].update(value = str(self.preferences['rpLEDPin']))
+        self.window['_rpLEDFreq_'].update(value = str(self.preferences['rpLEDFreq']))
+        self.window['_rpLEDdma_'].update(value = str(self.preferences['rpLEDdma']))
+        self.window['_rpLEDInvert_'].update(value = self.preferences['rpLEDInvert'])
+        self.window['_rpUseWeb_'].update(value = self.preferences['rpUseWeb'])
+        self.window['_rpSoftGamma_'].update(value = self.preferences['rpSoftGamma'])
+        self.window.refresh()
+
     def savePreferences(self):
         debugPrint('inSavePreferences')
         event, values = self.window.read(timeout=0)
@@ -192,6 +293,7 @@ class chromatizer():
         debugPrint('in Init')
         self.getAudioDevices()
         tmpBackground = '#808080'
+        tmpBackground = None
         verticalGap = 5
 
         rainbowLayout = [[sg.Graph(canvas_size=(800,250), graph_bottom_left=(0,0), graph_top_right=(800,250), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_rainbowGraph_')]]
@@ -274,23 +376,21 @@ class chromatizer():
                         sg.Sizer(30,00), sg.T('Brightness: '), sg.Graph(canvas_size=(270,30), graph_bottom_left=(0,0), graph_top_right=(270, 30), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_brightGraph_'), sg.Sizer(30,00),
                         sg.Checkbox('Display FPS', enable_events=True, default=self.preferences['dispFPS'], key='_dispFPS_'), sg.pin(sg.T('01', key='_FPS_', visible=self.preferences['dispFPS'])), sg.Push()],
                         [sg.Sizer(80,7)], [sg.Push(), sg.T(' Select Frequency Ranges for Audio Analysis '.center(100,'-')), sg.Push()],
-                        [sg.Graph(canvas_size=(800,30), graph_bottom_left=(0,0), graph_top_right=(800, 30), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_freqGraph_')]]
+                        [sg.Graph(canvas_size=(800,40), graph_bottom_left=(0,0), graph_top_right=(800, 40), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_freqGraph_')]]
         
         aboutLayout =   [[sg.Push(), sg.Image(source=signatureImage), sg.Push()]]
 
-        layout = [[sg.TabGroup([[sg.Tab('LED Control', ctrlLayout, right_click_menu=['', ['Save Settings']]), sg.Tab('Preferences', prefLayout, right_click_menu=['', ['Save Preferences']]), sg.Tab('About', aboutLayout)]], enable_events=True, key='_mainTab_', size=(800,500), tab_location='top', right_click_menu=['', ['Save Settings']])]]
+        layout = [[sg.TabGroup([[sg.Tab('LED Control', ctrlLayout, right_click_menu=['', ['Save Settings']]), sg.Tab('Preferences', prefLayout, right_click_menu=['', ['Save Preferences', 'Reset Preferences']]), sg.Tab('About', aboutLayout)]], enable_events=True, key='_mainTab_', size=(800,500), tab_location='top', right_click_menu=['', ['Save Settings']])]]
         
         self.window = sg.Window('Chromatizer: The Color of Music', layout, finalize=True, icon=windowIcon, size=(800,500), enable_close_attempted_event=True)
 
         #* Adding sliders
-        self.freqSlider = graphSlider(self.window['_freqGraph_'], sliderRange=(0,22000), sliders=(self.preferences['minFreq'], self.preferences['lowFreq'], self.preferences['highFreq'], self.preferences['maxFreq']),
-                                        colors='S'+self.preferences['colorOrder'], relativeHeight=6, lineWidth=5, leftPad=10, rightPad=55)
+        self.freqSlider = graphSlider(self.window['_freqGraph_'], sliderRange=(0,22000), sliders=[self.preferences['minFreq'], self.preferences['lowFreq'], self.preferences['highFreq'], self.preferences['maxFreq']],
+                                        colors='S'+self.preferences['colorOrder'], relativeHeight=20, lineWidth=5, leftPad=15, rightPad=60)
 
         #* Selecting tab from previous session 
         self.window[self.preferences['displayEffect']].select()
         self.window[self.preferences['activeDevice']].select()
-
-
 
 
 def main():
@@ -306,6 +406,14 @@ def main():
         elif event == '_audioDevice_' and values['_audioDevice_'] == '--Refresh Audio Devices--':
             cs.getAudioDevices()
             cs.window['_audioDevice_'].update(values=list(cs.audioDevices.keys())+['--Refresh Audio Devices--'], value = cs.preferences['audioDevice'])
+        elif event == '_freqGraph_':
+            cs.freqSlider.movePoints(values['_freqGraph_'])
+            cs.preferences['minFreq'] = cs.freqSlider.sliders[0]
+            cs.preferences['lowFreq'] = cs.freqSlider.sliders[1]
+            cs.preferences['highFreq'] = cs.freqSlider.sliders[2]
+            cs.preferences['maxFreq'] = cs.freqSlider.sliders[3]
+            cs.displayPreferences()
+            cs.window.refresh()
         elif event == 'Save Preferences' or event == 'Save Settings' or event == '_mainTab_' or event == '_displayEffect_' or event == '_activeDevice_':
             cs.savePreferences()
     cs.window.close()
