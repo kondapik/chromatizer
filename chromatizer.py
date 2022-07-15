@@ -32,13 +32,14 @@ splashWindow = sg.Window('splash', [[sg.Image(source=splashImage,
     metadata = None)]], no_titlebar=True, grab_anywhere=True, disable_close=True, margins=(0,0), element_padding=0, transparent_color=sg.theme_background_color(), icon=windowIcon, finalize=True)
 splashWindow.Refresh()
 
-import sys, pathlib, numpy as np, pyaudio, librosa
+import sys, pathlib, numpy as np, pyaudio, librosa, matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from math import ceil
 from time import time, sleep
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-debugOn = False
+debugOn = True
 colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080'}
 
 
@@ -94,6 +95,14 @@ def interpolate(y, new_length):
     x_new = np.linspace(0, 1, new_length)
     return np.interp(x_new, x_old, y)
 
+def draw_figure(canvas, figure):
+    figure_canvas_agg = FigureCanvasTkAgg(figure, canvas)
+    figure_canvas_agg.draw()
+    figure_canvas_agg.get_tk_widget().pack(side='top', fill='both', expand=1)
+    return figure_canvas_agg
+
+def getClosestIndex(array, searchTarget):
+    return min(enumerate(array), key=lambda x: abs(searchTarget - x[1])) 
 class expFilter:
     """Simple exponential smoothing filter"""
     def __init__(self, val=0.0, alpha_decay=0.5, alpha_rise=0.5):
@@ -113,6 +122,14 @@ class expFilter:
             alpha = self.alpha_rise if value > self.value else self.alpha_decay
         self.value = alpha * value + (1.0 - alpha) * self.value
         return self.value
+    
+    def updateDecay(self, value):
+        self.alpha_decay = value
+
+def getCloser(array, searchItem):
+    absolute_val_array = np.abs(array - searchItem)
+    smallest_difference_index = absolute_val_array.argmin()
+    return array[smallest_difference_index[0]]
 
 class graphSlider():
     graph = []
@@ -142,7 +159,7 @@ class graphSlider():
                     newFreq = int(self.frqMap(mousePosition[0]))
                     self.setSlider(newFreq, sliderIdx)
                     self.drawSlider()
-                    
+
     def setSlider(self, newFrq, tgtIdx):
         if newFrq in range(self.sliderRange[0], self.sliderRange[1]):
             if tgtIdx<(len(self.sliders)-1) and self.sliders[tgtIdx + 1] - newFrq < self.frqGap:
@@ -218,7 +235,11 @@ class chromatizer():
     activeDevice = []
     audioStream = []
     noFrames = []
+    audioSampleRate = []
+    audioDataRoll = []
+    hammingWindow = []
     readTimeout = None
+    melFrq = []
 
     preferences = sg.UserSettings(filename=str(getPrefFile()))
 
@@ -272,8 +293,9 @@ class chromatizer():
         for i in range(0, numDevices):
             if (self.pa.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
                 self.audioDevices[self.pa.get_device_info_by_host_api_device_index(0, i).get('name')] = i
-        self.preferences['audioDevice'] = self.pa.get_default_input_device_info()['name']
-        self.getAudioStream()
+        if self.preferences['audioDevice'] == '--Refresh Audio Devices--' or self.preferences['audioDevice'] not in self.audioDevices.keys():
+            self.preferences['audioDevice'] = self.pa.get_default_input_device_info()['name']
+        self.refreshAudioData()
     
     def getFPS(self):
         """Return the estimated frames per second
@@ -309,23 +331,43 @@ class chromatizer():
         self.audioDataRoll[:-1] = self.audioDataRoll[1:]
         self.audioDataRoll[-1, :] = np.copy(audioData)
         audioData = np.concatenate(self.audioDataRoll, axis=0).astype(np.float32)
+        melValues = []
+        melMax = []
 
         vol = np.max(np.abs(audioData))
         if vol < self.preferences['volTol']:
             self.stripSaver()
             self.readTimeout = 100
         else:
-            self.audioTimeout = 0
+            self.readTimeout = 0
             audioLen = len(audioData)
             audioData *= self.hammingWindow
-            audioDataPadded = np.pad(audioData, (0, 2**int(np.ceil(np.log2(audioLen))) - audioLen), mode='constant')
+            audioDataPadded = np.pad(audioData, ((2**int(np.ceil(np.log2(audioLen))) - audioLen)//2, (2**int(np.ceil(np.log2(audioLen))) - audioLen)//2), mode='constant')
             # YS = np.abs(np.fft.rfft(y_padded)[:N // 2])
-            # melValues = librosa.feature.melspectrogram(y=None, sr=22050, S=None, n_fft=2048, win_length=None, window='hann', center=True, pad_mode='constant', power=2.0, **kwargs)
+            melValues = librosa.feature.melspectrogram(y=audioDataPadded, sr=self.audioSampleRate, n_fft=self.noFrames*self.preferences['audioRoll']//2, win_length=self.noFrames, center=True, pad_mode='constant', power=2.0, n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'])
+            melValues = np.sum(melValues, axis=1)
+            melMax = np.max(gaussian_filter1d(melValues, sigma=1.0))
+            gainCheck = int(np.max(self.melGain.value) > self.preferences['gainLimit'])
+            self.melGain.updateDecay((gainCheck)*self.melGain.alpha_decay + (1-gainCheck)*0.0005)
+            self.melGain.update((gainCheck)*melMax + (1-gainCheck)*self.preferences['gainLimit'])
 
+            melValues /= self.melGain.value
+            melValues = self.melSmooth.update(melValues)
 
+            leftIndex = getClosestIndex(self.melFrq, self.preferences['lowFreq'])[0]
+            rightIndex = getClosestIndex(self.melFrq, self.preferences['highFreq'])[0]
+            
+            lowBand = melValues[0 : leftIndex + 1]
+            midBand = melValues[leftIndex : rightIndex + 1]
+            highBand = melValues[rightIndex : self.preferences['noFFT']]
 
-        debugPrint('Audio Data: ', audioData)
-        debugPrint('Volume: ', vol)
+            self.plotAx.cla()
+            self.plotAx.plot(self.melFrq, [melMax]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : leftIndex+1], lowBand, self.preferences['colorOrder'][0].lower(), self.melFrq[leftIndex : rightIndex+1], midBand, self.preferences['colorOrder'][1].lower(), self.melFrq[rightIndex : self.preferences['noFFT']], highBand, self.preferences['colorOrder'][2].lower())
+            
+            self.plotFig.draw()
+
+        debugPrint('Audio Data: ', melValues, )
+        debugPrint('gain: ',self.melGain.value,'\t','melMax',melMax,'\t','Volume: ', vol)
 
     def rainbowEffect(self):
         debugPrint('inRainbowEffect')
@@ -344,15 +386,23 @@ class chromatizer():
             self.displayEffect = self.singleEffect
             self.readTimeout = None
 
-    def getAudioStream(self):
+    def refreshAudioData(self):
         deviceInfo = self.pa.get_device_info_by_index(self.audioDevices[self.preferences['audioDevice']])
-        self.noFrames = int(deviceInfo['defaultSampleRate'] // self.preferences['tgtFPS'])
+        self.audioSampleRate = int(deviceInfo['defaultSampleRate'])
+        self.noFrames = int(self.audioSampleRate // self.preferences['tgtFPS'])
+        self.audioDataRoll = np.random.rand(self.preferences['audioRoll'], self.noFrames) / 1e16
+        self.hammingWindow = np.hamming(self.noFrames*self.preferences['audioRoll'])
+        self.melFrq = librosa.mel_frequencies(n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'], htk=False)
+
+        self.melGain= expFilter(np.tile(self.preferences['gainLimit'], self.preferences['noFFT']), alpha_decay=self.preferences['adGain'], alpha_rise=self.preferences['arGain'])
+        self.melSmooth = expFilter(np.tile(1e-1, self.preferences['noFFT']),  alpha_decay=self.preferences['adAudio'], alpha_rise=self.preferences['arAudio'])
+        # self.ledSmooth = expFilter(np.tile(0, self.preferences['noFFT']),  alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
 
         if self.audioStream != []:
             self.audioStream.stop_stream()
             self.audioStream.close()
         
-        self.audioStream = self.pa.open(format=pyaudio.paInt16, channels=1, rate=int(deviceInfo['defaultSampleRate']), input=True, input_device_index=self.audioDevices[self.preferences['audioDevice']], frames_per_buffer=self.noFrames)
+        self.audioStream = self.pa.open(format=pyaudio.paInt16, channels=1, rate=self.audioSampleRate, input=True, input_device_index=self.audioDevices[self.preferences['audioDevice']], frames_per_buffer=self.noFrames)
 
     def loopActions(self):
         debugPrint('inLoopActions: ', self.displayEffect)
@@ -545,11 +595,23 @@ class chromatizer():
         self.fps = expFilter(val=self.preferences['tgtFPS'], alpha_decay=0.2, alpha_rise=0.2)
         self.getEffectHandle()
 
-        # Setting audio roll
-        self.audioDataRoll = np.random.rand(self.preferences['audioRoll'], self.noFrames) / 1e16
-        self.hammingWindow = np.hamming(self.noFrames*self.preferences['audioRoll'])
-
+        self.melGain= expFilter(np.tile(self.preferences['gainLimit'], self.preferences['noFFT']), alpha_decay=self.preferences['adGain'], alpha_rise=self.preferences['arGain'])
+        self.melSmooth = expFilter(np.tile(1e-1, self.preferences['noFFT']),  alpha_decay=self.preferences['adAudio'], alpha_rise=self.preferences['arAudio'])
+        # self.ledSmooth = expFilter(np.tile(0, self.preferences['noFFT']),  alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
         self.stripSaver = self.stripRainbow
+
+        # instantiate matplotlib figure
+        fig = plt.figure(facecolor=sg.theme_background_color(), alpha=0.0)
+        fig.patch.set_alpha(0.0)
+        # fig.FigureBase.set_facecolor(sg.theme_background_color())
+        self.plotAx = fig.add_axes([0.005,0.02,0.99,0.97], autoscale_on=True, alpha=0.0, xscale="log")
+        # self.plotAx.set_facecolor(sg.theme_background_color())
+        self.plotAx.grid(visible=True, which='major')
+        DPI = fig.get_dpi()
+        fig.set_size_inches(748 / float(DPI), 202 / float(DPI))
+        self.plotFig = draw_figure(self.window['_plot_'].TKCanvas, fig)
+        self.plotAx.set_ylim(0, 1)
+        self.plotAx.set_xlim(self.preferences['minFreq'], self.preferences['maxFreq'])
 
         #* Selecting tab from previous session 
         self.window[self.preferences['displayEffect']].select()
@@ -567,9 +629,12 @@ def main():
         if event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT:
             cs.closeActions()
             break
-        elif event == '_audioDevice_' and values['_audioDevice_'] == '--Refresh Audio Devices--':
+        elif values['_audioDevice_'] == '--Refresh Audio Devices--':
             cs.getAudioDevices()
             cs.window['_audioDevice_'].update(values=list(cs.audioDevices.keys())+['--Refresh Audio Devices--'], value = cs.preferences['audioDevice'])
+        elif event == '_audioDevice_' and values['_audioDevice_'] != '--Refresh Audio Devices--':
+            cs.preferences['audioDevice'] = values['_audioDevice_']
+            cs.refreshAudioData()
         elif event == '_freqGraph_':
             cs.freqSlider.movePoints(values['_freqGraph_'])
             cs.preferences['minFreq'] = cs.freqSlider.sliders[0]
@@ -588,7 +653,11 @@ def main():
             cs.getEffectHandle()
             
         elif event == 'Save Preferences' or event == 'Save Settings' or event == '_mainTab_' or event == '_displayEffect_' or event == '_activeDevice_':
+            cs.freqSlider.sliders = [cs.preferences['minFreq'], cs.preferences['lowFreq'], cs.preferences['highFreq'], cs.preferences['maxFreq']]
+            cs.freqSlider.drawSlider()
             cs.savePreferences()
+            cs.refreshAudioData()
+            cs.window.refresh()
     
         cs.loopActions()
 
