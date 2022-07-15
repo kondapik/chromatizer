@@ -3,23 +3,42 @@ Title              : Chromatizer
 Description        : The Color of Music
 Author             : Kondapi Prasanth
 Created            : 09-Jul-2022
-Modified           : 12-Jul-2022
+Modified           : 14-Jul-2022
 Version            : 0
 Revision History   : 0
 
 """
+windowIcon = b'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'
+signatureImage=b'iVBORw0KGgoAAAANSUhEUgAAAOIAAAAtCAYAAACzrre2AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAADf1JREFUeNrsnQmYFcURx3s5XLklHIJAWA5FQW4JdzjlEEFACAIaFUEJ8UA5RRGjcsshKjcIoqKSILiAIsGAgIgBQVguQQ4RlMgZgqCyPLvyfpPXTGbfzsK+3Xlvp76vPnjz+s10d3XVv6q6ejZO+eSTUoU036T5Ks0XuZZD8w+ad2j+xZ+iyFLcFfy2lObfam6qObvmvJqrac6l+W3N0zX/5PJeCZrHaX5Y83e+WCJK8Zrrab5Dc33NhTV/r/lHzdloc0FzUc2VNZ/TvBz5rPOnz5Fk/bfWPFXzFs23R/qBJTQP1rxX8xrNkzS/oLm55oaae2kOaL4Ti+r2noc0P6M5TxRNfhPNfTWXiZL+/kbzMM3bNL+uub3mIrY2bTUPASEV8uiqeStynR1lMsoIEi9iKPNzHh2IGAnajdJ8QPOfsKJOaDoR61owDUr4reano0zALzLxxzT/Pgr6K8r0Jah2bQptbta8CSV1kv9oxjzH173/UW7N7zK3YqwOo5gRoYog4GTclXDwLG5MP5edKYkSPsWAooHy4qbt15ys+T3ccy/TENyllqm066H5IKjoRGIoX8Ft7e7r4H/lvlvzp5o7Y6T6R+phlTQf1/wQihaOntD8H83lXCrh4ShTwhqad2oej3t+IZITn04kYUMSsXtq8lipeVkq7Zoy7nezuBJKTuMrzZ/gHR4FESNCeUDCkS7jve2aZ7lQrFIo4ZNRpITV6fM84idZtF9rrurhPvdlsbR30bY747krlXbFNS8CYQtnYSXco3m15nwY5p813xKpB35EQsaNm9kRaK6hwmdiRQmPoIS5oggJJZm0mIlvpvnfxFteNSQSt25UwQSYG3f7Lc0bXMT2YpynkvDJiopYBiVcpYLZ50as++ci9UDZRjit+QblbotjreYVCDWcT30Ety5alDAfli8JN12BCBLb1vJon/NrTtS8RHNOF+1bEvMOdeklZVVFzIcxFqMs2zylcUlXRzIhIXHhCBdxoQKSk3GBUnJh26lghnFQFCmhYjGf0FzHSGgEiIe9Sv0IKZq5bD8eK3+ji7ayBfKm5n9qvjoLKaHoxFzCkwQ8oY8BlnKReujToGFRl+1fVsFN+PxhlPAkljd7FE3+SyQmOvBZDMgXBOhlPdpnQWmphJnksn0jlHaUy/ZVVDBVPy8LKaG4oANZC21BQ3FFpdqoaSThV9DwBZdKIwj4E4kBuxskn+eoYIq3hgpVbUQDdWPiBxkoPw7k7+Thfo8G3eq6bC9bG98o93uhXVSw7O3eGFGyOEKmASpYlGIn0YFbVXA3wHLdm+EV9Y1kx4aChm79f0nfn8FfNqk9Apukoq8SQzKDkm1caYzrNoQx1sMJGkGrvyv3Wyo3ENvPScO8LMEjiBWS5NQCFUy+VXT4/nqAaQWfy6tg9czsSHdMLF1H5b4G9TuQIgdxlMSVkgb/qwpWamSLQuHMR+kaGAkKcUml6qRCDC3CXsivs8v2D4G2LWNk/LLGm4Bu81KIh2XX4CBhVwHW9mrlvnwzQ8iqJrD20iaqtNeZeo26434ONIyIVBSd0tw4hpRQakyXgXBuqC6x4agYmoPCeD0/OHhtEhf2IQ5sQH5AMqaSLfdcbfF6FaywsLKgstF9lg7njULBSJ+lKEH206xMWG/QcUAUGxcn6kRs+IiLtmVxzRbH0PjjSLQIcDzv8F1dch/TuDYQl7S01wYi2Tk5t9bOltRZyODKR6FwhhuILiQJpqMgYgEVW/QKCFcilXYyB59rfkfF1qkLKXyXgofvHWJ+8RaScMNz4sIns9YjRpdr5e/TvEsF91KSjevz6PAfiRfPR4lgrlPBTOkcrL+4JnNByDEqmMCKNCVghSN9HlNcbEk+yZnRw2EQQ/ZMZb90puYJUapwokiSDe0PYARgUb6aKOJiQw9k3LJtJ4ekrYRdddpVwjB5RhGlow9qflz9/8Hf9wyXZ2IUKeJoFGEa7vVqBCYVRgci/GzZGH8DQd+bAYrYCMPidNxJEFKOTHVh8cm+2b4oRr6CxP1SpnnBUMLarFOZ959VKDlZivlZj9zvwmDtxDinheRZJ/E84iIxuBFY0pRclWfoROcoiavEzf4Xll+E9CoT2DCDnv9nDFaPDHiWnMLYgrstJGdL1+DZyILZrIJ7p6VUbJIo5AOsz54OyRt5A8HXoKUo34teHUg8cdNYlXIxeEESHO+rYIGA12kegpFSPammkX2jVldggSehXG5K+XJjsRtn0FiHYenr8VncLtmOqKxiKxmVEpXA5UxycGHvYR1Iyd8OQpQ4rw5EskeygV8ylXbjGFQtLw9G0+9wBSU2TMQda3UF93uJcbf34Firg3rTVdakq0DBAKhozxGcwQhv9roSFlPBPZchKvWq/mrEWoKK+T0snJHECMdQyBZXcC9BFTnFsJC58ho9h6V3m3DIQy5gEsmLWEDDPQ5oKNtWY1BQiSOXeRw81BRiQ7clXgsYXO00DqwIlmsELlu485CyQCoYbSTxUZ8YJ6Wqnqb4/l+QbAqQvGge5jn1iKt2EE/e7dBmMManB0o5AKPlhQLxZhiJtJyb68/cyPZFRRdK2wEjJJveH6qUq5AS6EeHMPKXgwdrMY5vhlkDVvazmE2xpGLGfDePhAlyKuWiAxpWZpzJKvSGghyEKpW8poQ3MYg2yn3ZWlViRUkGuNmHk81SOeH/DxU8lPwjE9QiBcHP4vspIHQXLJ5cu98h5pHC5lW4oWIcepOUCVckfSv9n4FgJAZ8GPc1p23xfMKz5X5S83mEzxMcElvNMQQZ8e6XfCiIZIKvcfkbMR5L6b8YHjmD6VTsnh+D8xnxZwIL+zEVrGW1k8Sjv+AiF3dIloxG8Xtxrzrcv0AK60vORUqdaFfW5TCM4VFb3F0Oo7vFIaZ/h3EuQeE70E7aP+k1Rfwca5HWFK71trMBKvz5tVa4h1ZVfw+UxEkRyzNRASb9Dlzg91HeJAcUehXFaMLnAiq0RZFSomQm92psuOariCMaOKChGKpRKlRV1I1FN9mmiKLQkjqfqzKmAkkW0940ut3iNexkoX+DkSlka2O99W2FIdvuLOBEh/hMjOMp5nym7XuRy3a8ICsp2A+UGueQWBHFO8+91qKwckZyI3KYakNIKdY4Z/N6zFrTpQDBbMYtALLLa0o4GmFcTtwTB0IksxCcjlZVJFCeoEJZ1k4oppVmtlyT+xHYahb5ctxKiWVeQwhmoqQMCHtchY76VGbxBFDOag5oJRb+EMkcoT/gcslv+ji4rYdYENfbMpQBkNf0LLYh7Bo2ZBlNMiw9K1jESB1UaXvJVUMSFiNU6BxeV+P7q5nvYyr0FoC8RoJOXODWNvfxGeS0FVl0MzyJ8VwbY3hGH3GvjbawRtpLVZDsba7E8C4BKO7j3wOGt5IDhJP19bFtnHIQejfj6AhKj2Qdnsf7UyCtnGx5XWXiEbjuWLG0xnl2l3MfSuJ0ODiRSTdPOj+O4AKGwuwC2W7k/wEjy9kUYS4wYgNrUzqAIilitg+4/xEsobln9igJqQDoLMj5Bgp/HCHXNIQ8HFQOqEvP6CWgbPMNd7CPce8nbAi5HZRIz+2envT3sTT+7lq4JjkB881uxZkPS0nEsNRCKfYZLp7p4i6B29BmA9+1xsAHcP+F2mK4N3N9mnGvOszpFPIA1tpYznwPwmjcQ/trSDRZ66S5IbfbMJ7y3QmedztjTmaNWMj8AP3OlEx4PuKiL0GFK80ilcY9koG/zERaMdxBrlfnc2fcUhl4SdzAOob7M5X2q4wkwiKuNUQoH7Bg5D7W28nWEVdK4N6O2EIWSFEyamLx5hFf7MfdFAs7lPaHQNci9Gcdi0pcHimTst5vWhR0fAtL2pPn9CSJEVChd4c+D/q2SSe5XUciSWLU9czz5VJv+jrYMMqJLPwAcWdnUK4TiGTFxAo03Yfxs1x1+X4i6L9chU7sTGOePyOxNAMD14F1Mhbj2wIjkcTvrMKEUhizvUY+YC1KKwb9K8NATsG72c49PmSdCXJPB2Xr4wHORnaFMkLpxHJIWU9f3KmFxGDDVfq+2iIe67yWCZjP9cWg5bdwIiiRLQVX6xzKaL5xbBP33Mz96jB5Ww13qYVxz+YYgIu0mUGWrzixRoB/axvu2h7anwB5RVDW6zQ2gHb7+f4kwl/EYo1nQS3m3meYhzvTYY6f5Z7HieXGMX9Xajx7GYixCXTJjVGy0OhtFXpt/1O29hb6H2B+d/B5G66gjPsRrp3CKOVAbq8ZY9pshAPy/L+o4JaT6S5Xo/05DNB0woTyKvQq/I0Yzz54URYoxBkGdLsh+6UZiYJxJCOshMRp4i/LNcgIys1E5kFIR8M828re7lOX/oWiWxBgEilv6y8aVUD59qlL62LjQavCWOGTxnfVef4udWmt7M1Y3l0oXBWMxhqQNlmFXh2yncVlpxJkE08Tn5xV3qXchAHxuISnjOtl6ft+o30B4u9kxp8TI1TKMGBLDXRSyKwycjtmA4e6XNtqyC6e+51Vl9bk5jJi/c2G3HKijMUIRXazHoqo0CkLi7ITHhXH6B5RPkUFTba5mT755FMGU1Xc6FnK/R/c8cknn9KZ/oZ72dCfCp98yhyStLvXX7nvk08xTwtBwwb+VPjkU+aQZAFlu6KfPxU++ZR5JPtQsmlcxZ8Kn3zKHLJesdDXnwqffMo8+hQ0rOxPhU8+ZQ5JkbZUjNztT4VPPmUOSXmU1EmuUt79c2w++RTz9CyxYVd/KnzyKfPQcCdoWMafDp98yhx6EDR81J8KnyJJvwowAIiui3xcODiuAAAAAElFTkSuQmCC'
+splashImage = r'G:\\design\\chromaticArduino\\chromatizer.png'
 
-import PySimpleGUI as sg, sys, pathlib, numpy as np, pyaudio
+import PySimpleGUI as sg
+
+splashWindow = sg.Window('splash', [[sg.Image(source=splashImage,
+    background_color = None,
+    size = (400, 400),
+    s = (None, None),
+    pad = None,
+    p = None,
+    key = None,
+    k = None,
+    tooltip = None,
+    subsample = None,
+    right_click_menu = None,
+    expand_x = False,
+    expand_y = False,
+    visible = True,
+    enable_events = False,
+    metadata = None)]], no_titlebar=True, grab_anywhere=True, disable_close=True, margins=(0,0), element_padding=0, transparent_color=sg.theme_background_color(), icon=windowIcon, finalize=True)
+splashWindow.Refresh()
+
+import sys, pathlib, numpy as np, pyaudio, librosa
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from math import ceil
 from time import time, sleep
 
-
-windowIcon = None
-signatureImage = None
-
-debugOn = True
+debugOn = False
 colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080'}
 
 
@@ -219,7 +238,7 @@ class chromatizer():
         preferences['tgtFPS'] = 90 
         preferences['noFFT'] = 24
         preferences['gainLimit'] = 0.000005
-        preferences['volTol'] = 0.0000000001
+        preferences['volTol'] = 0.0001
         preferences['audioRoll'] = 2
         preferences['adAudio'] = 0.8
         preferences['adGain'] = 0.01
@@ -280,10 +299,33 @@ class chromatizer():
             return self.fps.value
         return self.fps.update(1000.0 / dt)
 
+    def stripRainbow(self):
+        debugPrint('inStripRainbow')
+
     def audioEffect(self):
         debugPrint('inAudioEffect')
         audioData = np.fromstring(self.audioStream.read(self.noFrames, exception_on_overflow=False), dtype=np.int16)
+        audioData = audioData / 2.0**15
+        self.audioDataRoll[:-1] = self.audioDataRoll[1:]
+        self.audioDataRoll[-1, :] = np.copy(audioData)
+        audioData = np.concatenate(self.audioDataRoll, axis=0).astype(np.float32)
+
+        vol = np.max(np.abs(audioData))
+        if vol < self.preferences['volTol']:
+            self.stripSaver()
+            self.readTimeout = 100
+        else:
+            self.audioTimeout = 0
+            audioLen = len(audioData)
+            audioData *= self.hammingWindow
+            audioDataPadded = np.pad(audioData, (0, 2**int(np.ceil(np.log2(audioLen))) - audioLen), mode='constant')
+            # YS = np.abs(np.fft.rfft(y_padded)[:N // 2])
+            # melValues = librosa.feature.melspectrogram(y=None, sr=22050, S=None, n_fft=2048, win_length=None, window='hann', center=True, pad_mode='constant', power=2.0, **kwargs)
+
+
+
         debugPrint('Audio Data: ', audioData)
+        debugPrint('Volume: ', vol)
 
     def rainbowEffect(self):
         debugPrint('inRainbowEffect')
@@ -328,7 +370,6 @@ class chromatizer():
         self.window['_scrollDisplay_'].update(value = self.preferences['scrollDisplay'])
         self.window['_spectrumDisplay_'].update(value = self.preferences['spectrumDisplay'])
         self.window['_colorOrder_'].update(value = self.preferences['colorOrder'])
-        # self.preferences['brightness'].update(value = 100) #! Change it to local variable
         self.window['_dispFPS_'].update(value = self.preferences['dispFPS'])
         self.window['_noPixels_'].update(value = str(self.preferences['noPixels']))
         self.window['_tgtFPS_'].update(value = str(self.preferences['tgtFPS']))
@@ -369,7 +410,7 @@ class chromatizer():
         self.preferences['spectrumDisplay'] = values['_spectrumDisplay_']
         self.preferences['displayEffect'] = values['_displayEffect_']
         self.preferences['colorOrder'] = values['_colorOrder_']
-        self.preferences['brightness'] = 100 #! Change it to local variable
+        self.preferences['brightness'] = self.brightSlider.sliders[0]
         self.preferences['dispFPS'] = values['_dispFPS_']
         self.preferences['noPixels'] = int(values['_noPixels_'])
         self.preferences['tgtFPS'] = int(values['_tgtFPS_'])
@@ -484,7 +525,7 @@ class chromatizer():
                         [sg.Push(), sg.TabGroup([[sg.Tab('Audio', audioLayout), sg.Tab('Rainbow', rainbowLayout), sg.Tab('Single', singleLayout)]], size=(800,250), enable_events=True, key='_displayEffect_', tab_location='top'), sg.Push()],
                         [sg.Sizer(60,8)], [sg.Push(), sg.T('Color band order: '),
                         sg.Combo(['RRR', 'RRG', 'RRB', 'RGR', 'RGG', 'RGB', 'RBR', 'RBG', 'RBB', 'GRR', 'GRG', 'GRB', 'GGR', 'GGG', 'GGB', 'GBR', 'GBG', 'GBB', 'BRR', 'BRG', 'BRB', 'BGR', 'BGG', 'BGB', 'BBR', 'BBG', 'BBB'], default_value=self.preferences['colorOrder'], key='_colorOrder_', tooltip='Select color corresponding to Low, Mid and High band activations.', enable_events=True, readonly=True, size=(5,1)),
-                        sg.Sizer(30,00), sg.T('Brightness: '), sg.Graph(canvas_size=(270,30), graph_bottom_left=(0,0), graph_top_right=(270, 30), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_brightGraph_'), sg.Sizer(30,00),
+                        sg.Sizer(30,00), sg.T('Brightness: '), sg.Graph(canvas_size=(270,40), graph_bottom_left=(0,0), graph_top_right=(270, 40), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_brightGraph_'), sg.Sizer(30,00),
                         sg.Checkbox('Display FPS', enable_events=True, default=self.preferences['dispFPS'], key='_dispFPS_'), sg.pin(sg.T('01', key='_FPS_', visible=self.preferences['dispFPS'])), sg.Push()],
                         [sg.Sizer(80,7)], [sg.Push(), sg.T(' Select Frequency Ranges for Audio Analysis '.center(100,'-')), sg.Push()],
                         [sg.Graph(canvas_size=(800,40), graph_bottom_left=(0,0), graph_top_right=(800, 40), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_freqGraph_')]]
@@ -497,11 +538,18 @@ class chromatizer():
 
         #* Adding sliders
         self.freqSlider = graphSlider(self.window['_freqGraph_'], sliderRange=(0,22000), sliders=[self.preferences['minFreq'], self.preferences['lowFreq'], self.preferences['highFreq'], self.preferences['maxFreq']],
-                                        colors='S'+self.preferences['colorOrder'], relativeHeight=20, lineWidth=5, leftPad=15, rightPad=60)
+                                        colors='S'+self.preferences['colorOrder'], relativeHeight=23, lineWidth=5, leftPad=15, rightPad=60)
+        self.brightSlider = graphSlider(self.window['_brightGraph_'], sliderRange=(0,100), sliders=[self.preferences['brightness']], colors='C', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
 
         self.fpsTime = time() * 1000.0
         self.fps = expFilter(val=self.preferences['tgtFPS'], alpha_decay=0.2, alpha_rise=0.2)
         self.getEffectHandle()
+
+        # Setting audio roll
+        self.audioDataRoll = np.random.rand(self.preferences['audioRoll'], self.noFrames) / 1e16
+        self.hammingWindow = np.hamming(self.noFrames*self.preferences['audioRoll'])
+
+        self.stripSaver = self.stripRainbow
 
         #* Selecting tab from previous session 
         self.window[self.preferences['displayEffect']].select()
@@ -510,6 +558,7 @@ class chromatizer():
 
 def main():
     cs = chromatizer()
+    splashWindow.close()
     while True:      
         event, values = cs.window.read(cs.readTimeout)
         # debugPrint(type(event))
@@ -527,6 +576,11 @@ def main():
             cs.preferences['lowFreq'] = cs.freqSlider.sliders[1]
             cs.preferences['highFreq'] = cs.freqSlider.sliders[2]
             cs.preferences['maxFreq'] = cs.freqSlider.sliders[3]
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_brightGraph_':
+            cs.brightSlider.movePoints(values['_brightGraph_'])
+            cs.preferences['brightness'] = cs.brightSlider.sliders[0]
             cs.displayPreferences()
             cs.window.refresh()
         elif event == '_displayEffect_':
