@@ -32,16 +32,25 @@ splashWindow = sg.Window('splash', [[sg.Image(source=splashImage,
     metadata = None)]], no_titlebar=True, grab_anywhere=True, disable_close=True, margins=(0,0), element_padding=0, transparent_color=sg.theme_background_color(), icon=windowIcon, finalize=True)
 splashWindow.Refresh()
 
-import sys, pathlib, numpy as np, pyaudio, librosa, matplotlib.pyplot as plt
+import sys, platform, pathlib, numpy as np, pyaudio, librosa, matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from math import ceil
 from time import time, sleep
+from colorsys import hsv_to_rgb
+from threading import Thread, Timer
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-debugOn = True
+debugOn = False
 colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080'}
+gammaDefault =  np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   5,   6,   6,   6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,
+                            11,  11,  11,  12,  12,  13,  13,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20,  20,  21,  21,  22,  23,  23,  24,  24,  25,  26,  26,  27,  28,  28,  29,  30,  30,  31,  32,  32,  33,  34,  35,  35,  36,  37,  38,  38,  39,  40,  41,  42,
+                            42,  43,  44,  45,  46,  47,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  84,  85,  86,  87,  88,  89,  91,  92,  93,  94,
+                            95,  97,  98,  99, 100, 102, 103, 104, 105, 107, 108, 109, 111,  112, 113, 115, 116, 117, 119, 120, 121, 123, 124, 126, 127, 128, 130, 131, 133, 134, 136, 137, 139, 140, 142, 143, 145, 146, 148, 149, 151, 152, 154, 155, 157, 158, 160, 162, 163, 165, 166, 168,
+                            170, 171, 173, 175, 176, 178, 180, 181, 183, 185, 186, 188, 190, 192, 193, 195, 197, 199, 200, 202, 204, 206, 207, 209, 211, 213, 215, 217, 218, 220, 222, 224, 226, 228, 230, 232, 233, 235, 237, 239, 241, 243, 245, 247, 249, 251, 253, 255])
 
+_is_python_2 = int(platform.python_version_tuple()[0]) == 2
+runThread = True
 
 def getPrefFile() -> pathlib.Path:
     """
@@ -101,8 +110,6 @@ def draw_figure(canvas, figure):
     figure_canvas_agg.get_tk_widget().pack(side='top', fill='both', expand=1)
     return figure_canvas_agg
 
-def getClosestIndex(array, searchTarget):
-    return min(enumerate(array), key=lambda x: abs(searchTarget - x[1])) 
 class expFilter:
     """Simple exponential smoothing filter"""
     def __init__(self, val=0.0, alpha_decay=0.5, alpha_rise=0.5):
@@ -179,8 +186,9 @@ class graphSlider():
                 return True
 
     def drawSlider(self):
-        self.graph.erase()
-
+        # self.graph.erase()
+        for figID in self.lines + self.points + self.pointLabels: self.graph.delete_figure(figID)
+        
         #* Creating lines
         # line[0] from sliderRange[0] to slider[0], line[1] from slider[0] to slider[1], line[2] from slider[1] to sliderRange[1]
         for lineNo in range(0, len(self.sliders) + 1):
@@ -222,8 +230,18 @@ class graphSlider():
         
         self.drawSlider()
 
-        self.frqGap = ceil(((sliderRange[1] - sliderRange[0])/(self.areaOfInterest[1] - self.areaOfInterest[0]))*(self.graph.get_bounding_box(3*len(sliders)+5)[1][0] - self.graph.get_bounding_box(3*len(sliders)+5)[0][0]))
+        self.frqGap = ceil(((sliderRange[1] - sliderRange[0])/(self.areaOfInterest[1] - self.areaOfInterest[0]))*(self.graph.get_bounding_box( self.points[0])[1][0] - self.graph.get_bounding_box(self.points[0])[0][0]))
         
+class RepeatTimer(Timer):
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+def threadTimer(seconds, window, eventName):
+    global runThread
+    while runThread:
+        sleep(seconds)
+        window.write_event_value('_'+eventName+'_', '')
 
 class chromatizer():
 
@@ -240,6 +258,8 @@ class chromatizer():
     hammingWindow = []
     readTimeout = None
     melFrq = []
+    commSoc = []
+    melBank = []
 
     preferences = sg.UserSettings(filename=str(getPrefFile()))
 
@@ -283,6 +303,9 @@ class chromatizer():
         preferences['rpUseWeb'] = False
         preferences['rpSoftGamma'] = True
         preferences['activeDevice'] = 'ESP 8266'
+        preferences['showOutPlot'] = False
+        preferences['showFreqPlot'] = False
+        preferences['showGainPlot'] = False
 
     #*  Update available input audio devices in a dictionary 
     def getAudioDevices(self):
@@ -321,12 +344,176 @@ class chromatizer():
             return self.fps.value
         return self.fps.update(1000.0 / dt)
 
+    def sendToESP(self):
+        debugPrint('inSendToESP')
+        tmpPixels = np.copy(np.clip(self.currPixels, 0, 255).astype(int))
+        p = self.gammaTable[tmpPixels] if self.preferences['espSoftGamma'] else np.copy(tmpPixels)
+        MAX_PIXELS_PER_PACKET = 126
+        # Pixel indices
+        idx = range(self.currPixels.shape[1])
+        idx = [i for i in idx if not np.array_equal(p[:, i], self.prevPixels[:, i])]
+        n_packets = len(idx) // MAX_PIXELS_PER_PACKET + 1
+        idx = np.array_split(idx, n_packets)
+        for packet_indices in idx:
+            m = '' if _is_python_2 else []
+            for i in packet_indices:
+                if _is_python_2:
+                    m += chr(i) + chr(p[0][i]) + chr(p[1][i]) + chr(p[2][i])
+                else:
+                    m.append(i)  # Index of pixel to change
+                    m.append(p[0][i])  # Pixel red value
+                    m.append(p[1][i])  # Pixel green value
+                    m.append(p[2][i])  # Pixel blue value
+            m = m if _is_python_2 else bytes(m)
+            self.commSoc.sendto(m, (self.preferences['espUDPIP'], self.preferences['espUDPPort']))
+        self.prevPixels = np.copy(p)
+
+    def sendToPi(self):
+        debugPrint('inSendToPi')
+
+    def setupDisplayDevice(self):
+        if self.preferences['activeDevice'] == 'ESP 8266':
+            import socket
+            self.commSoc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.displayFunction = self.sendToESP
+        # Raspberry Pi controls the LED strip directly
+        # ! uncomment these later
+        # elif self.preferences['activeDevice'] == 'Raspberry Pi':
+        #     import neopixel
+        #     strip = neopixel.Adafruit_NeoPixel(self.preferences['noPixels'], self.preferences['rpLEDPin'],
+        #                                     self.preferences['rpLEDFreq'], self.preferences['rpLEDdma'],
+        #                                     self.preferences['rpLEDInvert'], self.preferences['rpUseWeb'])
+        #     strip.begin()
+        #     self.displayFunction = self.sendToPi
+
+    def stripClear(self):
+        #time.sleep(.05);
+        debugPrint('inStripClear')
+        tmpPixels = self.currPixels[:, self.preferences['noPixels']//2:]
+        # Scrolling effect window
+        tmpPixels[:, 1:] = tmpPixels[:, :-1]
+        # Create new color originating at the center
+        tmpPixels[0, 0] = 0
+        tmpPixels[1, 0] = 0
+        tmpPixels[2, 0] = 0
+
+        # Update the LED strip
+        # print('R {:.0f} G {:.0f} B {:.0f}'.format(r, g, b))
+        self.currPixels = np.concatenate((tmpPixels[:, ::-1], tmpPixels), axis=1)
+
     def stripRainbow(self):
         debugPrint('inStripRainbow')
+        tmpPixels = np.copy(self.currPixels[:, self.preferences['noPixels']//2:])
+        
+        self.rainbowFwd = 1 if self.rainbowHue == 0 else 0 if self.rainbowHue == 1 else self.rainbowFwd
+        self.rainbowHue = self.rainbowHue + (self.rainbowFwd*(0.0016)+ (1-self.rainbowFwd)*(-0.0016))
+
+        cycValue = hsv_to_rgb(self.rainbowHue, 1, 1)
+        # Scrolling effect window
+        tmpPixels[:, 1:] = tmpPixels[:, :-1]
+        # Create new color originating at the center
+        tmpPixels[0, 0] = int(np.interp(cycValue[0],[0,1],[0,60]))
+        tmpPixels[1, 0] = int(np.interp(cycValue[1],[0,1],[0,60]))
+        tmpPixels[2, 0] = int(np.interp(cycValue[2],[0,1],[0,60]))
+        
+        # print('R {:.0f} G {:.0f} B {:.0f}'.format(r, g, b))
+        # Update the LED strip
+        self.currPixels = np.concatenate((tmpPixels[:, ::-1], tmpPixels), axis=1)
+
+    def scrollDisplay(self, allMelValues):
+        debugPrint('inScrollDisplay')
+        tmpPixels = self.currPixels[:, self.preferences['noPixels']//2:]
+        melValues = np.copy(allMelValues[0])
+        # melValues = melValues**2.0
+        melValues *= 255.0
+
+        valueMap = {}
+        # Color channel mappings
+        valueMap[self.preferences['colorOrder'][2]] = int(np.max(melValues[allMelValues[2] : self.preferences['noFFT']]))
+        valueMap[self.preferences['colorOrder'][1]] = int(np.max(melValues[allMelValues[1] : allMelValues[2]]))
+        valueMap[self.preferences['colorOrder'][0]] = int(np.max(melValues[0 : allMelValues[1]]))
+
+        # Crude beat detection
+        if max(valueMap.values()) - np.max(tmpPixels[:,0:10]) > 10:
+            # print('Value amplified, max value:', max(valueMap.values()), '  diff: ', max(valueMap.values()) - np.max(tmpPixels[:,0:10]))
+            tmpPixels[:,0:10] *= np.arange(0.7,0.4,-0.03)
+            valueMap['R'] = valueMap['R']*1.5
+            valueMap['G'] = valueMap['G']*1.5
+            valueMap['B'] = valueMap['B']*1.5
+
+        # Scrolling values
+        tmpPixels[:, 1:] = tmpPixels[:, :-1]
+        tmpPixels *= 0.98
+        tmpPixels = gaussian_filter1d(tmpPixels, sigma=0.2)
+
+        # Create new color originating at the center
+        tmpPixels[0, 0] = valueMap['R']
+        tmpPixels[1, 0] = valueMap['G']
+        tmpPixels[2, 0] = valueMap['B']
+
+        # Update the LED strip
+        self.currPixels = np.concatenate((tmpPixels[:, ::-1], tmpPixels), axis=1)
+
+    def energyDisplay(self, allMelValues):
+        debugPrint('inEnergyDisplay')
+        tmpPixels = self.currPixels[:, self.preferences['noPixels']//2:]
+        melValues = np.copy(allMelValues[0])
+        # Scale by the width of the LED strip
+        melValues *= float((self.preferences['noPixels'] // 2) - 1)
+
+        valueMap = {}
+        # Color channel mappings
+        scale = 0.94
+        valueMap[self.preferences['colorOrder'][2]] = int(np.mean(melValues[allMelValues[2] : self.preferences['noFFT']])**scale)
+        valueMap[self.preferences['colorOrder'][1]] = int(np.mean(melValues[allMelValues[1] : allMelValues[2]])**scale)
+        valueMap[self.preferences['colorOrder'][0]] = int(np.mean(melValues[0 : allMelValues[1]])**scale)
+
+        maxBrightness = 200.0
+        # Assign color to different frequency regions
+        tmpPixels[0, :valueMap['R']] = maxBrightness
+        tmpPixels[0, valueMap['R']:] = 0.0
+        tmpPixels[1, :valueMap['G']] = maxBrightness
+        tmpPixels[1, valueMap['G']:] = 0.0
+        tmpPixels[2, :valueMap['B']] = maxBrightness
+        tmpPixels[2, valueMap['B']:] = 0.0
+        self.ledFlt.update(tmpPixels)
+        tmpPixels = np.round(self.ledFlt.value)
+
+        # Apply substantial blur to smooth the edges
+        tmpPixels[0, :] = gaussian_filter1d(tmpPixels[0, :], sigma=4.0)
+        tmpPixels[1, :] = gaussian_filter1d(tmpPixels[1, :], sigma=4.0)
+        tmpPixels[2, :] = gaussian_filter1d(tmpPixels[2, :], sigma=4.0)
+
+        # Update the LED strip
+        self.currPixels = np.concatenate((tmpPixels[:, ::-1], tmpPixels), axis=1)
+
+    def spectrumDisplay(self, allMelValues):
+        debugPrint('inSpectrumDisplay')
+        melValues = allMelValues[0]
+        # melValues = melValues**2.0
+
+        melSpectrum = np.copy(interpolate(melValues, self.preferences['noPixels'] // 2))
+        self.currSpectrum.update(melSpectrum)
+        diff = melSpectrum - self.oldSpectrum
+        self.oldSpectrum = np.copy(melSpectrum)
+
+        valueMap = {}
+        # Color channel mappings
+        valueMap[self.preferences['colorOrder'][2]] = self.spectrumDiff.update(melSpectrum - self.currSpectrum.value)
+        valueMap[self.preferences['colorOrder'][1]] = np.abs(diff)
+        valueMap[self.preferences['colorOrder'][0]] = self.oldSpectrumFlt.update(np.copy(melSpectrum))
+
+        # Mirror the color channels for symmetric output
+        r = np.concatenate((valueMap['R'][::-1], valueMap['R']))
+        g = np.concatenate((valueMap['G'][::-1], valueMap['G']))
+        b = np.concatenate((valueMap['B'][::-1], valueMap['B']))
+
+        # Update the LED strip
+        self.currPixels = np.array([r,g,b]) * 255
 
     def audioEffect(self):
         debugPrint('inAudioEffect')
-        audioData = np.fromstring(self.audioStream.read(self.noFrames, exception_on_overflow=False), dtype=np.int16)
+        audioData = np.frombuffer(self.audioStream.read(self.noFrames, exception_on_overflow=False), dtype=np.int16)
         audioData = audioData / 2.0**15
         self.audioDataRoll[:-1] = self.audioDataRoll[1:]
         self.audioDataRoll[-1, :] = np.copy(audioData)
@@ -337,15 +524,22 @@ class chromatizer():
         vol = np.max(np.abs(audioData))
         if vol < self.preferences['volTol']:
             self.stripSaver()
-            self.readTimeout = 100
+            self.displayFunction()
+            self.readTimeout = 20
         else:
             self.readTimeout = 0
             audioLen = len(audioData)
             audioData *= self.hammingWindow
-            audioDataPadded = np.pad(audioData, ((2**int(np.ceil(np.log2(audioLen))) - audioLen)//2, (2**int(np.ceil(np.log2(audioLen))) - audioLen)//2), mode='constant')
+            # audioDataPadded = np.pad(audioData, ((2**int(np.ceil(np.log2(audioLen))) - audioLen)//2, (2**int(np.ceil(np.log2(audioLen))) - audioLen)//2), mode='constant')
+            audioDataPadded = np.pad(audioData, (0, (2**int(np.ceil(np.log2(audioLen))) - audioLen)), mode='constant')
             # YS = np.abs(np.fft.rfft(y_padded)[:N // 2])
-            melValues = librosa.feature.melspectrogram(y=audioDataPadded, sr=self.audioSampleRate, n_fft=self.noFrames*self.preferences['audioRoll']//2, win_length=self.noFrames, center=True, pad_mode='constant', power=2.0, n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'])
-            melValues = np.sum(melValues, axis=1)
+            # melValues = librosa.feature.melspectrogram(y=audioDataPadded, sr=self.audioSampleRate, n_fft=self.noFrames*self.preferences['audioRoll']//2, win_length=self.noFrames, center=False, pad_mode='constant', power=2.0, n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'])
+            audioDataFreq = np.abs(np.fft.rfft(audioDataPadded)[:audioLen // 2])
+            melBank = self.melBank[:,:audioDataFreq.size]
+            melValues = np.atleast_2d(audioDataFreq).T * melBank.T
+
+            melValues = np.sum(melValues, axis=0)
+            # melValues = melValues**2.0
             melMax = np.max(gaussian_filter1d(melValues, sigma=1.0))
             gainCheck = int(np.max(self.melGain.value) > self.preferences['gainLimit'])
             self.melGain.updateDecay((gainCheck)*self.melGain.alpha_decay + (1-gainCheck)*0.0005)
@@ -354,37 +548,72 @@ class chromatizer():
             melValues /= self.melGain.value
             melValues = self.melSmooth.update(melValues)
 
-            leftIndex = getClosestIndex(self.melFrq, self.preferences['lowFreq'])[0]
-            rightIndex = getClosestIndex(self.melFrq, self.preferences['highFreq'])[0]
+            leftIndex = abs(self.melFrq - self.preferences['lowFreq']).argmin()
+            rightIndex = abs(self.melFrq - self.preferences['highFreq']).argmin()
             
+            melValues[0 : leftIndex] = melValues[0 : leftIndex] / 1.5
+            melValues[leftIndex : rightIndex] = melValues[leftIndex : rightIndex] * 1.2
+            melValues[rightIndex : self.preferences['noFFT']] = melValues[rightIndex : self.preferences['noFFT']] * 2
+
             lowBand = melValues[0 : leftIndex + 1]
             midBand = melValues[leftIndex : rightIndex + 1]
             highBand = melValues[rightIndex : self.preferences['noFFT']]
-
-            self.plotAx.cla()
-            self.plotAx.plot(self.melFrq, [melMax]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : leftIndex+1], lowBand, self.preferences['colorOrder'][0].lower(), self.melFrq[leftIndex : rightIndex+1], midBand, self.preferences['colorOrder'][1].lower(), self.melFrq[rightIndex : self.preferences['noFFT']], highBand, self.preferences['colorOrder'][2].lower())
+            self.melData = (melMax, lowBand, midBand, highBand)
+            # self.ledSmooth.update(melValues)
+            # melValues /= self.ledSmooth.value
+            self.audioStripDisplay((melValues, leftIndex, rightIndex))
             
-            self.plotFig.draw()
+            self.displayFunction()
+
 
         debugPrint('Audio Data: ', melValues, )
         debugPrint('gain: ',self.melGain.value,'\t','melMax',melMax,'\t','Volume: ', vol)
 
+    def displayPlot(self):
+        if self.preferences['showOutPlot']:
+            self.plotAx.cla()
+            self.plotAx.plot(list(range(0, len(self.currPixels[0]))), self.currPixels[0], 'r', list(range(0, len(self.currPixels[1]))), self.currPixels[1], 'g', list(range(0, len(self.currPixels[2]))), self.currPixels[2], 'b')
+            self.plotFig.draw()
+        elif self.preferences['showFreqPlot'] and self.preferences['showGainPlot']:
+            self.plotAx.cla()
+            self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
+            self.plotFig.draw()
+        elif self.preferences['showFreqPlot']:
+            self.plotAx.cla()
+            self.plotAx.plot(self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
+            self.plotFig.draw()
+        elif self.preferences['showGainPlot']:
+            self.plotAx.cla()
+            self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c')
+            self.plotFig.draw()
+
+    def displayFPS(self):        
+        if self.preferences['dispFPS']: self.window['_FPS_'].update(value = str(int(self.fps.value)))
+
     def rainbowEffect(self):
         debugPrint('inRainbowEffect')
+        self.stripRainbow()
+        self.displayFunction()
 
     def singleEffect(self):
         debugPrint('inSingleEffect')
 
     def getEffectHandle(self):
-        if self.preferences['_displayEffect_'] == 'Audio':
+        if self.preferences['displayEffect'] == 'Audio':
             self.displayEffect = self.audioEffect
             self.readTimeout = 0
-        elif self.preferences['_displayEffect_'] == 'Rainbow':
+        elif self.preferences['displayEffect'] == 'Rainbow':
             self.displayEffect = self.rainbowEffect
             self.readTimeout = 0
-        elif self.preferences['_displayEffect_'] == 'Single':
+        elif self.preferences['displayEffect'] == 'Single':
             self.displayEffect = self.singleEffect
             self.readTimeout = None
+
+    def getSaverHandle(self):
+        if self.preferences['stripSaver'] == 'None':
+            self.stripSaver = self.stripClear
+        elif self.preferences['stripSaver'] == 'Rainbow':
+            self.stripSaver = self.stripRainbow
 
     def refreshAudioData(self):
         deviceInfo = self.pa.get_device_info_by_index(self.audioDevices[self.preferences['audioDevice']])
@@ -392,11 +621,12 @@ class chromatizer():
         self.noFrames = int(self.audioSampleRate // self.preferences['tgtFPS'])
         self.audioDataRoll = np.random.rand(self.preferences['audioRoll'], self.noFrames) / 1e16
         self.hammingWindow = np.hamming(self.noFrames*self.preferences['audioRoll'])
-        self.melFrq = librosa.mel_frequencies(n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'], htk=False)
+        self.melFrq = librosa.mel_frequencies(n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'], htk=False)    
+        self.melBank = librosa.filters.mel(sr=self.audioSampleRate, n_fft=self.noFrames*self.preferences['audioRoll'], n_mels=self.preferences['noFFT'], fmin=self.preferences['minFreq'], fmax=self.preferences['maxFreq'])
 
         self.melGain= expFilter(np.tile(self.preferences['gainLimit'], self.preferences['noFFT']), alpha_decay=self.preferences['adGain'], alpha_rise=self.preferences['arGain'])
         self.melSmooth = expFilter(np.tile(1e-1, self.preferences['noFFT']),  alpha_decay=self.preferences['adAudio'], alpha_rise=self.preferences['arAudio'])
-        # self.ledSmooth = expFilter(np.tile(0, self.preferences['noFFT']),  alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
+        self.ledSmooth = expFilter(np.tile(0.1, self.preferences['noFFT']),  alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
 
         if self.audioStream != []:
             self.audioStream.stop_stream()
@@ -407,9 +637,35 @@ class chromatizer():
     def loopActions(self):
         debugPrint('inLoopActions: ', self.displayEffect)
         self.displayEffect()
+        self.getFPS()
 
+    def resetPlot(self):
+        if self.preferences['showOutPlot']:
+            self.plotAx.set_ylim(0, 255)
+            self.plotAx.set_xlim(0, self.preferences['noPixels'])
+            self.plotAx.set_autoscalex_on(False)
+            self.plotAx.set_autoscaley_on(False)
+            self.window['Audio'].set_right_click_menu(['', ['Disable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']])
+            self.window['_plot_'].set_right_click_menu(['', ['Disable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']])
+            
+        else:
+            gainTxt = 'Dis' if self.preferences['showGainPlot'] else 'En'
+            freqTxt = 'Dis' if self.preferences['showFreqPlot'] else 'En'
+            self.window['Audio'].set_right_click_menu(['', ['Enable Output Plot', freqTxt+'able Freq., Plot', gainTxt+'able Gain Plot']])
+            self.window['_plot_'].set_right_click_menu(['', ['Enable Output Plot', freqTxt+'able Freq., Plot', gainTxt+'able Gain Plot']])
+            if self.preferences['showFreqPlot'] or self.preferences['showGainPlot']:
+                self.plotAx.set_ylim(0, 1)
+                self.plotAx.set_xlim(self.preferences['minFreq'], self.preferences['maxFreq'])
+                self.plotAx.set_autoscalex_on(False)
+                self.plotAx.set_autoscaley_on(True)
+        self.plotAx.cla()
+    
     def closeActions(self):
         self.savePreferences()
+        self.currPixels = np.tile(0, (3, self.preferences['noPixels']))
+        self.displayFunction()
+        # self.plotThread.join()
+        # self.fpsThread.join()
         self.pa.terminate()
 
     def displayPreferences(self):
@@ -572,9 +828,10 @@ class chromatizer():
         ctrlLayout =    [[sg.Sizer(60,3)],[sg.Push(),sg.B(button_text='Start', tooltip='Start the show.', enable_events=True, button_color='green', key='_start_',size=(10,1)), sg.Sizer(60,00), sg.T('Select audio source: '),
                         sg.Combo(list(self.audioDevices.keys())+['--Refresh Audio Devices--'], default_value=self.preferences['audioDevice'], key='_audioDevice_', tooltip='Select audio source.', enable_events=True, readonly=True),sg.Push()],
                         [sg.HorizontalSeparator()],
-                        [sg.Push(), sg.TabGroup([[sg.Tab('Audio', audioLayout), sg.Tab('Rainbow', rainbowLayout), sg.Tab('Single', singleLayout)]], size=(800,250), enable_events=True, key='_displayEffect_', tab_location='top'), sg.Push()],
+                        [sg.Push(), sg.TabGroup([[sg.Tab('Audio', audioLayout, right_click_menu=['', ['Enable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']]), sg.Tab('Rainbow', rainbowLayout), sg.Tab('Single', singleLayout)]], size=(800,250), enable_events=True, key='_displayEffect_', tab_location='top'), sg.Push()],
                         [sg.Sizer(60,8)], [sg.Push(), sg.T('Color band order: '),
-                        sg.Combo(['RRR', 'RRG', 'RRB', 'RGR', 'RGG', 'RGB', 'RBR', 'RBG', 'RBB', 'GRR', 'GRG', 'GRB', 'GGR', 'GGG', 'GGB', 'GBR', 'GBG', 'GBB', 'BRR', 'BRG', 'BRB', 'BGR', 'BGG', 'BGB', 'BBR', 'BBG', 'BBB'], default_value=self.preferences['colorOrder'], key='_colorOrder_', tooltip='Select color corresponding to Low, Mid and High band activations.', enable_events=True, readonly=True, size=(5,1)),
+                        sg.Combo(['RGB','RBG', 'GRB', 'GBR', 'BRG', 'BGR'], default_value=self.preferences['colorOrder'], key='_colorOrder_', tooltip='Select color corresponding to Low, Mid and High band activations.', enable_events=True, readonly=True, size=(5,1)),
+                        # sg.Combo(['RRR', 'RRG', 'RRB', 'RGR', 'RGG', 'RGB', 'RBR', 'RBG', 'RBB', 'GRR', 'GRG', 'GRB', 'GGR', 'GGG', 'GGB', 'GBR', 'GBG', 'GBB', 'BRR', 'BRG', 'BRB', 'BGR', 'BGG', 'BGB', 'BBR', 'BBG', 'BBB'], default_value=self.preferences['colorOrder'], key='_colorOrder_', tooltip='Select color corresponding to Low, Mid and High band activations.', enable_events=True, readonly=True, size=(5,1)),
                         sg.Sizer(30,00), sg.T('Brightness: '), sg.Graph(canvas_size=(270,40), graph_bottom_left=(0,0), graph_top_right=(270, 40), background_color=tmpBackground, motion_events = False, enable_events = True, drag_submits = True, key='_brightGraph_'), sg.Sizer(30,00),
                         sg.Checkbox('Display FPS', enable_events=True, default=self.preferences['dispFPS'], key='_dispFPS_'), sg.pin(sg.T('01', key='_FPS_', visible=self.preferences['dispFPS'])), sg.Push()],
                         [sg.Sizer(80,7)], [sg.Push(), sg.T(' Select Frequency Ranges for Audio Analysis '.center(100,'-')), sg.Push()],
@@ -591,34 +848,72 @@ class chromatizer():
                                         colors='S'+self.preferences['colorOrder'], relativeHeight=23, lineWidth=5, leftPad=15, rightPad=60)
         self.brightSlider = graphSlider(self.window['_brightGraph_'], sliderRange=(0,100), sliders=[self.preferences['brightness']], colors='C', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
 
+
+        #* Creating Rainbow tab sliders
+        # self.redSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,255), sliders=[150], colors='R', relativeHeight=200, lineWidth=5, leftPad=35, rightPad=90)
+        # self.greenSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,255), sliders=[150], colors='G', relativeHeight=150, lineWidth=5, leftPad=35, rightPad=90)
+        # self.blueSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,255), sliders=[150], colors='B', relativeHeight=100, lineWidth=5, leftPad=35, rightPad=90)
+        # self.speedSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,100), sliders=[75], colors='M', relativeHeight=50, lineWidth=5, leftPad=75, rightPad=140)
+
         self.fpsTime = time() * 1000.0
         self.fps = expFilter(val=self.preferences['tgtFPS'], alpha_decay=0.2, alpha_rise=0.2)
         self.getEffectHandle()
 
         self.melGain= expFilter(np.tile(self.preferences['gainLimit'], self.preferences['noFFT']), alpha_decay=self.preferences['adGain'], alpha_rise=self.preferences['arGain'])
         self.melSmooth = expFilter(np.tile(1e-1, self.preferences['noFFT']),  alpha_decay=self.preferences['adAudio'], alpha_rise=self.preferences['arAudio'])
-        # self.ledSmooth = expFilter(np.tile(0, self.preferences['noFFT']),  alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
-        self.stripSaver = self.stripRainbow
+        self.ledSmooth = expFilter(np.tile(0.1, self.preferences['noFFT']),  alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
+        self.getSaverHandle()
+
+        self.melData = (0,0,0,0)
 
         # instantiate matplotlib figure
         fig = plt.figure(facecolor=sg.theme_background_color(), alpha=0.0)
         fig.patch.set_alpha(0.0)
         # fig.FigureBase.set_facecolor(sg.theme_background_color())
-        self.plotAx = fig.add_axes([0.005,0.02,0.99,0.97], autoscale_on=True, alpha=0.0, xscale="log")
-        # self.plotAx.set_facecolor(sg.theme_background_color())
+        self.plotAx = fig.add_axes([0.005,0.02,0.99,0.97], autoscale_on=False, alpha=0.0, xscale="linear")
+        self.plotAx.set_facecolor(sg.theme_background_color())
         self.plotAx.grid(visible=True, which='major')
         DPI = fig.get_dpi()
         fig.set_size_inches(748 / float(DPI), 202 / float(DPI))
         self.plotFig = draw_figure(self.window['_plot_'].TKCanvas, fig)
-        self.plotAx.set_ylim(0, 1)
-        self.plotAx.set_xlim(self.preferences['minFreq'], self.preferences['maxFreq'])
+        self.resetPlot()
+
+        self.audioStripDisplay = self.energyDisplay if self.preferences['energyDisplay'] else self.scrollDisplay if self.preferences['scrollDisplay'] else self.spectrumDisplay
+        #* Setting up LED strip
+        self.prevPixels = np.tile(253.0, (3, self.preferences['noPixels']))
+        self.currPixels = np.tile(1.0, (3, self.preferences['noPixels']))
+        self.ledGain= expFilter(np.tile(self.preferences['gainLimit'], self.preferences['noFFT']), alpha_decay=self.preferences['adLED'], alpha_rise=self.preferences['arLED'])
+
+        self.spectrumDiff = expFilter(np.tile(0.01, self.preferences['noPixels'] // 2), alpha_decay=0.2, alpha_rise=0.99)
+        self.oldSpectrumFlt = expFilter(np.tile(0.01, self.preferences['noPixels'] // 2), alpha_decay=0.1, alpha_rise=0.5)
+        self.currSpectrum = expFilter(np.tile(0.01, self.preferences['noPixels'] // 2), alpha_decay=0.99, alpha_rise=0.01)
+        self.ledFlt = expFilter(np.tile(1, (3, self.preferences['noPixels'] // 2)), alpha_decay=0.1, alpha_rise=0.99)
+        self.oldSpectrum = np.tile(0.01, self.preferences['noPixels'] // 2)
+
+        self.rainbowHue = 0
+        self.rainbowFwd = 1
+
+        self.gammaTable = np.copy(gammaDefault)
+        self.displayFunction = self.sendToESP
+        self.setupDisplayDevice()
+
 
         #* Selecting tab from previous session 
         self.window[self.preferences['displayEffect']].select()
         self.window[self.preferences['activeDevice']].select()
 
+        # Thread(target=myTimer, args=(4,))
+        # self.plotThread = RepeatTimer(1, self.displayPlot)
+        # self.fpsThread = RepeatTimer(1, self.displayFPS)
+        self.plotThread = Thread(target=threadTimer, args=(0.2, self.window, 'plotThread', ), daemon=True)
+        self.fpsThread = Thread(target=threadTimer, args=(0.4, self.window,'fpsThread', ), daemon=True)
+        
+        self.plotThread.start()
+        self.fpsThread.start()
+
 
 def main():
+    global runThread
     cs = chromatizer()
     splashWindow.close()
     while True:      
@@ -627,6 +922,7 @@ def main():
         debugPrint(event, values)
         debugPrint(sg.user_settings())
         if event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT:
+            runThread = False
             cs.closeActions()
             break
         elif values['_audioDevice_'] == '--Refresh Audio Devices--':
@@ -635,6 +931,19 @@ def main():
         elif event == '_audioDevice_' and values['_audioDevice_'] != '--Refresh Audio Devices--':
             cs.preferences['audioDevice'] = values['_audioDevice_']
             cs.refreshAudioData()
+        elif event == '_dispFPS_':
+            cs.preferences['dispFPS'] = values['_dispFPS_']
+            cs.window['_FPS_'].update(visible=cs.preferences['dispFPS'])
+        elif event == '_displayEffect_':
+            cs.preferences['displayEffect'] = values['_displayEffect_']
+            cs.getEffectHandle()
+        elif event == '_plotThread_':
+            cs.displayPlot()
+        elif event == '_fpsThread_':
+            cs.displayFPS()
+        elif event == '_stripSaver_':
+            cs.preferences['stripSaver'] = values['_stripSaver_']
+            cs.getSaverHandle()
         elif event == '_freqGraph_':
             cs.freqSlider.movePoints(values['_freqGraph_'])
             cs.preferences['minFreq'] = cs.freqSlider.sliders[0]
@@ -648,10 +957,28 @@ def main():
             cs.preferences['brightness'] = cs.brightSlider.sliders[0]
             cs.displayPreferences()
             cs.window.refresh()
-        elif event == '_displayEffect_':
-            cs.preferences['_displayEffect_'] = values['_displayEffect_']
-            cs.getEffectHandle()
-            
+        elif event == '_colorOrder_':
+            cs.preferences['colorOrder'] = values['_colorOrder_']
+            cs.freqSlider.colors='S'+cs.preferences['colorOrder']
+            cs.freqSlider.drawSlider()
+            cs.savePreferences()
+            cs.window.refresh()
+        elif event == '_energyDisplay_' or event == '_scrollDisplay_' or event == '_spectrumDisplay_':
+            cs.savePreferences()
+            cs.audioStripDisplay = cs.energyDisplay if cs.preferences['energyDisplay'] else cs.scrollDisplay if cs.preferences['scrollDisplay'] else cs.spectrumDisplay
+        elif event == 'Enable Output Plot' or event == 'Disable Output Plot':
+            cs.preferences['showOutPlot'] = not cs.preferences['showOutPlot']
+            cs.preferences['showFreqPlot'] = False
+            cs.preferences['showGainPlot'] = False
+            cs.resetPlot()
+        elif event == 'Enable Freq., Plot' or event == 'Disable Freq., Plot':
+            cs.preferences['showOutPlot'] = False
+            cs.preferences['showFreqPlot'] = not cs.preferences['showFreqPlot']
+            cs.resetPlot()
+        elif event == 'Enable Gain Plot' or event == 'Disable Gain Plot':
+            cs.preferences['showOutPlot'] = False
+            cs.preferences['showGainPlot'] = not cs.preferences['showGainPlot']
+            cs.resetPlot()
         elif event == 'Save Preferences' or event == 'Save Settings' or event == '_mainTab_' or event == '_displayEffect_' or event == '_activeDevice_':
             cs.freqSlider.sliders = [cs.preferences['minFreq'], cs.preferences['lowFreq'], cs.preferences['highFreq'], cs.preferences['maxFreq']]
             cs.freqSlider.drawSlider()
