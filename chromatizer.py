@@ -38,7 +38,7 @@ from scipy.ndimage import gaussian_filter1d
 from math import ceil
 from time import time, sleep
 from colorsys import hsv_to_rgb
-from threading import Thread, Timer
+# from threading import Thread, Timer
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 debugOn = False
@@ -163,6 +163,8 @@ class graphSlider():
                 currentPoint = [x for x in self.figuresOfInterest if x in elements]
                 debugPrint(currentPoint)
                 if len(currentPoint):
+                    if currentPoint[0] not in self.points:
+                        currentPoint[0] = currentPoint[0] + len(self.points)
                     sliderIdx = self.points.index(currentPoint[0]) - 2
                     newFreq = int(self.frqMap(mousePosition[0]))
                     self.setSlider(newFreq, sliderIdx)
@@ -212,7 +214,7 @@ class graphSlider():
             idx = pointNo - 2
             self.points[pointNo] = self.graph.draw_point((int(self.posMap(self.sliders[idx])), self.lineHeight), pointWidth, color=colorMap[self.colors[idx]])
 
-        self.figuresOfInterest = tuple(self.points[2:])
+        self.figuresOfInterest = tuple(self.points[2:]+self.pointLabels[2:])
 
     def __init__(self, graphInp, sliderRange=(1,100), sliders=[60], colors='C', relativeHeight=6, lineWidth=5, leftPad=10, rightPad=10):
         self.graph = graphInp
@@ -233,16 +235,6 @@ class graphSlider():
 
         self.frqGap = ceil(((sliderRange[1] - sliderRange[0])/(self.areaOfInterest[1] - self.areaOfInterest[0]))*(self.graph.get_bounding_box( self.points[0])[1][0] - self.graph.get_bounding_box(self.points[0])[0][0]))
         
-class RepeatTimer(Timer):
-    def run(self):
-        while not self.finished.wait(self.interval):
-            self.function(*self.args, **self.kwargs)
-
-def threadTimer(seconds, window, eventName):
-    global runThread
-    while runThread:
-        sleep(seconds)
-        window.write_event_value('_'+eventName+'_', '')
 
 class chromatizer():
 
@@ -322,6 +314,7 @@ class chromatizer():
         else:
             self.window['_start_'].update(text='Start', button_color='green')
             self.window['_start_'].set_tooltip('Start the show.')
+            self.readTimeout = None
         
     #*  Update available input audio devices in a dictionary 
     def getAudioDevices(self):
@@ -587,26 +580,34 @@ class chromatizer():
 
     def displayPlot(self):
         if self.preferences['start']:
-            if self.preferences['showOutPlot']:
-                self.plotAx.cla()
-                self.plotAx.plot(list(range(0, len(self.currPixels[0]))), self.currPixels[0], 'r', list(range(0, len(self.currPixels[1]))), self.currPixels[1], 'g', list(range(0, len(self.currPixels[2]))), self.currPixels[2], 'b')
-                self.plotFig.draw()
-            elif self.preferences['showFreqPlot'] and self.preferences['showGainPlot']:
-                self.plotAx.cla()
-                self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
-                self.plotFig.draw()
-            elif self.preferences['showFreqPlot']:
-                self.plotAx.cla()
-                self.plotAx.plot(self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
-                self.plotFig.draw()
-            elif self.preferences['showGainPlot']:
-                self.plotAx.cla()
-                self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c')
-                self.plotFig.draw()
+            dt = time() - self.plotTimer
+            if dt > 0.2:
+                debugPrint(dt)
+                if self.preferences['showOutPlot']:
+                    self.plotAx.cla()
+                    self.plotAx.plot(list(range(0, len(self.currPixels[0]))), self.currPixels[0], 'r', list(range(0, len(self.currPixels[1]))), self.currPixels[1], 'g', list(range(0, len(self.currPixels[2]))), self.currPixels[2], 'b')
+                    self.plotFig.draw()
+                elif self.preferences['showFreqPlot'] and self.preferences['showGainPlot']:
+                    self.plotAx.cla()
+                    self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
+                    self.plotFig.draw()
+                elif self.preferences['showFreqPlot']:
+                    self.plotAx.cla()
+                    self.plotAx.plot(self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
+                    self.plotFig.draw()
+                elif self.preferences['showGainPlot']:
+                    self.plotAx.cla()
+                    self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c')
+                    self.plotFig.draw()
+                self.plotTimer = time()
 
-    def displayFPS(self):        
-        if self.preferences['dispFPS'] and self.preferences['start']: self.window['_FPS_'].update(value = str(int(self.fps.value)))
-        self.window.refresh()
+    def displayFPS(self):    
+        if self.preferences['dispFPS'] and self.preferences['start']:
+            dt = time() - self.fpsTimer
+            if dt > 0.2:
+                self.window['_FPS_'].update(value = str(int(self.fps.value)))
+                self.window.refresh()
+                self.fpsTimer = time()
 
     def rainbowEffect(self):
         debugPrint('inRainbowEffect')
@@ -640,7 +641,7 @@ class chromatizer():
     def getEffectHandle(self):
         if self.preferences['displayEffect'] == 'Audio':
             self.displayEffect = self.audioEffect
-            self.readTimeout = 0
+            self.readTimeout = int(1000/self.preferences['tgtFPS'])
         elif self.preferences['displayEffect'] == 'Rainbow':
             self.displayEffect = self.rainbowEffect
             self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
@@ -678,6 +679,8 @@ class chromatizer():
         if self.preferences['start']:
             self.displayEffect()
             self.getFPS()
+            self.displayPlot()
+            self.displayFPS()
         elif self.preferences['clrClose']:
             self.currPixels = np.tile(0, (3, self.preferences['noPixels'])).astype(np.float64)
             self.displayFunction()
@@ -922,6 +925,8 @@ class chromatizer():
         self.blueSlider = graphSlider(self.window['_blueGraph_'], sliderRange=(0,255), sliders=[self.preferences['singleBlue']], colors='B', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
 
         self.fpsTime = time() * 1000.0
+        self.plotTimer = time()
+        self.fpsTimer = time()
         self.fps = expFilter(val=self.preferences['tgtFPS'], alpha_decay=0.2, alpha_rise=0.2)
         self.getEffectHandle()
 
@@ -971,11 +976,11 @@ class chromatizer():
         # Thread(target=myTimer, args=(4,))
         # self.plotThread = RepeatTimer(1, self.displayPlot)
         # self.fpsThread = RepeatTimer(1, self.displayFPS)
-        self.plotThread = Thread(target=threadTimer, args=(0.1, self.window, 'plotThread', ), daemon=True)
-        self.fpsThread = Thread(target=threadTimer, args=(0.4, self.window,'fpsThread', ), daemon=True)
+        # self.plotThread = Thread(target=threadTimer, args=(0.1, self.window, 'plotThread', ), daemon=True)
+        # self.fpsThread = Thread(target=threadTimer, args=(0.4, self.window,'fpsThread', ), daemon=True)
         
-        self.plotThread.start()
-        self.fpsThread.start()
+        # self.plotThread.start()
+        # self.fpsThread.start()
 
 
 def main():
@@ -1046,10 +1051,6 @@ def main():
             cs.preferences['singleBlue'] = int(cs.blueSlider.sliders[0])
             cs.displayPreferences()
             cs.window.refresh()
-        elif event == '_plotThread_':
-            cs.displayPlot()
-        elif event == '_fpsThread_':
-            cs.displayFPS()
         elif event == '_stripSaver_':
             cs.preferences['stripSaver'] = values['_stripSaver_']
             cs.getSaverHandle()
