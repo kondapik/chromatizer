@@ -3,7 +3,7 @@ Title              : Chromatizer
 Description        : The Color of Music
 Author             : Kondapi Prasanth
 Created            : 09-Jul-2022
-Modified           : 14-Jul-2022
+Modified           : 19-Jul-2022
 Version            : 0
 Revision History   : 0
 
@@ -42,7 +42,7 @@ from threading import Thread, Timer
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 debugOn = False
-colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080'}
+colorMap = {'W':'white', 'K':'black', 'R':'red', 'G':'green', 'B':'blue', 'C':'cyan', 'Y':'yellow', 'M':'magenta', 'S':'#C0C0C0', 'D':'#808080', 'O':'#FF5F1F'}
 gammaDefault =  np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   5,   6,   6,   6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,
                             11,  11,  11,  12,  12,  13,  13,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20,  20,  21,  21,  22,  23,  23,  24,  24,  25,  26,  26,  27,  28,  28,  29,  30,  30,  31,  32,  32,  33,  34,  35,  35,  36,  37,  38,  38,  39,  40,  41,  42,
                             42,  43,  44,  45,  46,  47,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82,  84,  85,  86,  87,  88,  89,  91,  92,  93,  94,
@@ -51,6 +51,7 @@ gammaDefault =  np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 
 _is_python_2 = int(platform.python_version_tuple()[0]) == 2
 runThread = True
+speedMap = interp1d([0, 100], [80, 0])
 
 def getPrefFile() -> pathlib.Path:
     """
@@ -273,24 +274,24 @@ class chromatizer():
         preferences['spectrumDisplay'] = False
         preferences['displayEffect'] = 'Audio'
         preferences['colorOrder'] = 'BRG'
-        preferences['brightness'] = 100
+        preferences['brightness'] = 90
         preferences['dispFPS'] = False
         preferences['noPixels'] = 150
-        preferences['tgtFPS'] = 90 
-        preferences['noFFT'] = 24
-        preferences['gainLimit'] = 0.000005
+        preferences['tgtFPS'] = 80 
+        preferences['noFFT'] = 32
+        preferences['gainLimit'] = 0.9
         preferences['volTol'] = 0.0001
         preferences['audioRoll'] = 2
-        preferences['adAudio'] = 0.8
-        preferences['adGain'] = 0.01
-        preferences['adLED'] = 0.1
+        preferences['adAudio'] = 0.9
+        preferences['adGain'] = 0.5
+        preferences['adLED'] = 0.5
         preferences['gammaTable'] = 'Default'
         preferences['clrClose'] = True
-        preferences['minFreq'] = 50
-        preferences['lowFreq'] = 1500
-        preferences['highFreq'] = 6000
-        preferences['maxFreq'] = 16000
-        preferences['arAudio'] = 0.92
+        preferences['minFreq'] = 100
+        preferences['lowFreq'] = 720
+        preferences['highFreq'] = 5000
+        preferences['maxFreq'] = 12000
+        preferences['arAudio'] = 0.99
         preferences['arGain'] = 0.99
         preferences['arLED'] = 0.9
         preferences['espUDPIP'] = '192.168.0.150'
@@ -306,7 +307,22 @@ class chromatizer():
         preferences['showOutPlot'] = False
         preferences['showFreqPlot'] = False
         preferences['showGainPlot'] = False
+        preferences['rainbowSpeed'] = 75
+        preferences['rainbowSat'] = 100
+        preferences['rainbowVal'] = 100
+        preferences['singleRed'] = 255
+        preferences['singleGreen'] = 95
+        preferences['singleBlue'] = 31
+        preferences['start'] = True
 
+    def setupStartButton(self):
+        if self.preferences['start']:
+            self.window['_start_'].update(text='Stop',button_color='red')
+            self.window['_start_'].set_tooltip('Stop the display.')
+        else:
+            self.window['_start_'].update(text='Start', button_color='green')
+            self.window['_start_'].set_tooltip('Start the show.')
+        
     #*  Update available input audio devices in a dictionary 
     def getAudioDevices(self):
         debugPrint('in getAudioDevices')
@@ -346,7 +362,7 @@ class chromatizer():
 
     def sendToESP(self):
         debugPrint('inSendToESP')
-        tmpPixels = np.copy(np.clip(self.currPixels, 0, 255).astype(int))
+        tmpPixels = np.copy(np.clip(self.currPixels*self.preferences['brightness']/100, 0, 255).astype(int))
         p = self.gammaTable[tmpPixels] if self.preferences['espSoftGamma'] else np.copy(tmpPixels)
         MAX_PIXELS_PER_PACKET = 126
         # Pixel indices
@@ -408,7 +424,7 @@ class chromatizer():
         self.rainbowFwd = 1 if self.rainbowHue == 0 else 0 if self.rainbowHue == 1 else self.rainbowFwd
         self.rainbowHue = self.rainbowHue + (self.rainbowFwd*(0.0016)+ (1-self.rainbowFwd)*(-0.0016))
 
-        cycValue = hsv_to_rgb(self.rainbowHue, 1, 1)
+        cycValue = hsv_to_rgb(self.rainbowHue, self.preferences['rainbowSat']/100, self.preferences['rainbowVal']/100)
         # Scrolling effect window
         tmpPixels[:, 1:] = tmpPixels[:, :-1]
         # Create new color originating at the center
@@ -525,7 +541,7 @@ class chromatizer():
         if vol < self.preferences['volTol']:
             self.stripSaver()
             self.displayFunction()
-            self.readTimeout = 20
+            self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
         else:
             self.readTimeout = 0
             audioLen = len(audioData)
@@ -570,41 +586,64 @@ class chromatizer():
         debugPrint('gain: ',self.melGain.value,'\t','melMax',melMax,'\t','Volume: ', vol)
 
     def displayPlot(self):
-        if self.preferences['showOutPlot']:
-            self.plotAx.cla()
-            self.plotAx.plot(list(range(0, len(self.currPixels[0]))), self.currPixels[0], 'r', list(range(0, len(self.currPixels[1]))), self.currPixels[1], 'g', list(range(0, len(self.currPixels[2]))), self.currPixels[2], 'b')
-            self.plotFig.draw()
-        elif self.preferences['showFreqPlot'] and self.preferences['showGainPlot']:
-            self.plotAx.cla()
-            self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
-            self.plotFig.draw()
-        elif self.preferences['showFreqPlot']:
-            self.plotAx.cla()
-            self.plotAx.plot(self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
-            self.plotFig.draw()
-        elif self.preferences['showGainPlot']:
-            self.plotAx.cla()
-            self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c')
-            self.plotFig.draw()
+        if self.preferences['start']:
+            if self.preferences['showOutPlot']:
+                self.plotAx.cla()
+                self.plotAx.plot(list(range(0, len(self.currPixels[0]))), self.currPixels[0], 'r', list(range(0, len(self.currPixels[1]))), self.currPixels[1], 'g', list(range(0, len(self.currPixels[2]))), self.currPixels[2], 'b')
+                self.plotFig.draw()
+            elif self.preferences['showFreqPlot'] and self.preferences['showGainPlot']:
+                self.plotAx.cla()
+                self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c' ,self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
+                self.plotFig.draw()
+            elif self.preferences['showFreqPlot']:
+                self.plotAx.cla()
+                self.plotAx.plot(self.melFrq[0 : len(self.melData[1])], self.melData[1], self.preferences['colorOrder'][0].lower(), self.melFrq[len(self.melData[1])-1 : len(self.melData[1])+len(self.melData[2])-1], self.melData[2], self.preferences['colorOrder'][1].lower(), self.melFrq[len(self.melData[1])+len(self.melData[2])-2: self.preferences['noFFT']], self.melData[3], self.preferences['colorOrder'][2].lower())
+                self.plotFig.draw()
+            elif self.preferences['showGainPlot']:
+                self.plotAx.cla()
+                self.plotAx.plot(self.melFrq, [self.melData[0]]*len(self.melFrq),'m', self.melFrq, self.melGain.value,'c')
+                self.plotFig.draw()
 
     def displayFPS(self):        
-        if self.preferences['dispFPS']: self.window['_FPS_'].update(value = str(int(self.fps.value)))
+        if self.preferences['dispFPS'] and self.preferences['start']: self.window['_FPS_'].update(value = str(int(self.fps.value)))
+        self.window.refresh()
 
     def rainbowEffect(self):
         debugPrint('inRainbowEffect')
+        self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
         self.stripRainbow()
         self.displayFunction()
 
     def singleEffect(self):
         debugPrint('inSingleEffect')
+        tmpPixels = self.currPixels[:, self.preferences['noPixels']//2:]
+        tmpLen = int(tmpPixels.shape[1]*0.55)
+        # Assign color to different frequency regions
+        tmpPixels[0, :tmpLen] = self.preferences['singleRed']
+        tmpPixels[0, tmpLen:] = 0.0
+        tmpPixels[1, :tmpLen] = self.preferences['singleGreen']
+        tmpPixels[1, tmpLen:] = 0.0
+        tmpPixels[2, :tmpLen] = self.preferences['singleBlue']
+        tmpPixels[2, tmpLen:] = 0.0
+        self.ledFlt.update(tmpPixels)
+        tmpPixels = np.round(self.ledFlt.value)
 
+        # Apply substantial blur to smooth the edges
+        tmpPixels[0, :] = gaussian_filter1d(tmpPixels[0, :], sigma=4.0)
+        tmpPixels[1, :] = gaussian_filter1d(tmpPixels[1, :], sigma=4.0)
+        tmpPixels[2, :] = gaussian_filter1d(tmpPixels[2, :], sigma=4.0)
+
+        # Update the LED strip
+        self.currPixels = np.concatenate((tmpPixels[:, ::-1], tmpPixels), axis=1)
+        self.displayFunction()
+    
     def getEffectHandle(self):
         if self.preferences['displayEffect'] == 'Audio':
             self.displayEffect = self.audioEffect
             self.readTimeout = 0
         elif self.preferences['displayEffect'] == 'Rainbow':
             self.displayEffect = self.rainbowEffect
-            self.readTimeout = 0
+            self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
         elif self.preferences['displayEffect'] == 'Single':
             self.displayEffect = self.singleEffect
             self.readTimeout = None
@@ -636,8 +675,12 @@ class chromatizer():
 
     def loopActions(self):
         debugPrint('inLoopActions: ', self.displayEffect)
-        self.displayEffect()
-        self.getFPS()
+        if self.preferences['start']:
+            self.displayEffect()
+            self.getFPS()
+        elif self.preferences['clrClose']:
+            self.currPixels = np.tile(0, (3, self.preferences['noPixels'])).astype(np.float64)
+            self.displayFunction()
 
     def resetPlot(self):
         if self.preferences['showOutPlot']:
@@ -662,8 +705,9 @@ class chromatizer():
     
     def closeActions(self):
         self.savePreferences()
-        self.currPixels = np.tile(0, (3, self.preferences['noPixels']))
-        self.displayFunction()
+        if self.preferences['clrClose']:
+            self.currPixels = np.tile(0, (3, self.preferences['noPixels']))
+            self.displayFunction()
         # self.plotThread.join()
         # self.fpsThread.join()
         self.pa.terminate()
@@ -746,6 +790,9 @@ class chromatizer():
         self.preferences['rpUseWeb'] = values['_rpUseWeb_']
         self.preferences['rpSoftGamma'] = values['_rpSoftGamma_']
         self.preferences['activeDevice'] = values['_activeDevice_']
+        self.preferences['rainbowSpeed'] = self.speedSlider.sliders[0]
+        self.preferences['rainbowSat'] = self.saturationSlider.sliders[0]
+        self.preferences['rainbowVal'] = self.valueSlider.sliders[0]
 
     def __init__(self):
         debugPrint('in Init')
@@ -753,10 +800,23 @@ class chromatizer():
         tmpBackground = '#808080'
         tmpBackground = None
         verticalGap = 5
-
-        rainbowLayout = [[sg.Graph(canvas_size=(800,250), graph_bottom_left=(0,0), graph_top_right=(800,250), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_rainbowGraph_')]]
         
-        singleLayout =  [[sg.Graph(canvas_size=(800,250), graph_bottom_left=(0,0), graph_top_right=(800,250), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_singleGraph_')]]
+        rainbowLayout = [[sg.Sizer(20,35)],
+                        [sg.Push(), sg.T(' Color Control (HSV)'.center(100,'-')), sg.Push()],
+                        [sg.Push(), sg.T('Saturation: '.ljust(13,' ')), sg.Graph(canvas_size=(260,40), graph_bottom_left=(0,0), graph_top_right=(260,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_saturationGraph_'),
+                        sg.Sizer(40,3), sg.T('Value: '.ljust(13,' ')), sg.Graph(canvas_size=(260,40), graph_bottom_left=(0,0), graph_top_right=(260,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_valueGraph_'), sg.Push()],
+                        [sg.Sizer(20,40)],
+                        [sg.Push(), sg.T(' Speed Control (HSV)'.center(100,'-')), sg.Push()],
+                        [sg.Graph(canvas_size=(800,40), graph_bottom_left=(0,0), graph_top_right=(800,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_speedGraph_')]]
+        
+        singleLayout =  [[sg.Sizer(20,25)],
+                        [sg.Push(), sg.T(' Color Control (RGB)'.center(100,'-')), sg.Push()],
+                        [sg.Sizer(20,15)],
+                        [sg.Push(), sg.T('Red: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_redGraph_'), sg.Push()],
+                        [sg.Sizer(20,verticalGap)],
+                        [sg.Push(), sg.T('Green: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_greenGraph_'), sg.Push()],
+                        [sg.Sizer(20,verticalGap)],
+                        [sg.Push(), sg.T('Blue: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_blueGraph_'), sg.Push()]]
 
         audioLayout =   [[sg.Canvas(key='_plot_', size=(800,200),background_color=tmpBackground, right_click_menu=['', ['Enable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']])],
                         [sg.Sizer(60,3), sg.T('Select \'Strip\'saver: '), sg.Combo(['None','Rainbow'], default_value=self.preferences['stripSaver'], key='_stripSaver_', tooltip='Select what to show when audio level below min threshold.', enable_events=True, readonly=True),
@@ -843,6 +903,8 @@ class chromatizer():
         
         self.window = sg.Window('Chromatizer: The Color of Music', layout, finalize=True, icon=windowIcon, size=(800,500), enable_close_attempted_event=True)
 
+        self.setupStartButton()
+
         #* Adding sliders
         self.freqSlider = graphSlider(self.window['_freqGraph_'], sliderRange=(0,22000), sliders=[self.preferences['minFreq'], self.preferences['lowFreq'], self.preferences['highFreq'], self.preferences['maxFreq']],
                                         colors='S'+self.preferences['colorOrder'], relativeHeight=23, lineWidth=5, leftPad=15, rightPad=60)
@@ -850,10 +912,14 @@ class chromatizer():
 
 
         #* Creating Rainbow tab sliders
-        # self.redSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,255), sliders=[150], colors='R', relativeHeight=200, lineWidth=5, leftPad=35, rightPad=90)
-        # self.greenSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,255), sliders=[150], colors='G', relativeHeight=150, lineWidth=5, leftPad=35, rightPad=90)
-        # self.blueSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,255), sliders=[150], colors='B', relativeHeight=100, lineWidth=5, leftPad=35, rightPad=90)
-        # self.speedSlider = graphSlider(self.window['_rainbowGraph_'], sliderRange=(0,100), sliders=[75], colors='M', relativeHeight=50, lineWidth=5, leftPad=75, rightPad=140)
+        self.saturationSlider = graphSlider(self.window['_saturationGraph_'], sliderRange=(0,100), sliders=[self.preferences['rainbowSat']], colors='O', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.valueSlider = graphSlider(self.window['_valueGraph_'], sliderRange=(0,100), sliders=[self.preferences['rainbowVal']], colors='C', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.speedSlider = graphSlider(self.window['_speedGraph_'], sliderRange=(0,100), sliders=[self.preferences['rainbowSpeed']], colors='M', relativeHeight=20, lineWidth=5, leftPad=75, rightPad=140)
+
+        #* Single Color Tab sliders
+        self.redSlider = graphSlider(self.window['_redGraph_'], sliderRange=(0,255), sliders=[self.preferences['singleRed']], colors='R', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.greenSlider = graphSlider(self.window['_greenGraph_'], sliderRange=(0,255), sliders=[self.preferences['singleGreen']], colors='G', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.blueSlider = graphSlider(self.window['_blueGraph_'], sliderRange=(0,255), sliders=[self.preferences['singleBlue']], colors='B', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
 
         self.fpsTime = time() * 1000.0
         self.fps = expFilter(val=self.preferences['tgtFPS'], alpha_decay=0.2, alpha_rise=0.2)
@@ -905,7 +971,7 @@ class chromatizer():
         # Thread(target=myTimer, args=(4,))
         # self.plotThread = RepeatTimer(1, self.displayPlot)
         # self.fpsThread = RepeatTimer(1, self.displayFPS)
-        self.plotThread = Thread(target=threadTimer, args=(0.2, self.window, 'plotThread', ), daemon=True)
+        self.plotThread = Thread(target=threadTimer, args=(0.1, self.window, 'plotThread', ), daemon=True)
         self.fpsThread = Thread(target=threadTimer, args=(0.4, self.window,'fpsThread', ), daemon=True)
         
         self.plotThread.start()
@@ -937,13 +1003,6 @@ def main():
         elif event == '_displayEffect_':
             cs.preferences['displayEffect'] = values['_displayEffect_']
             cs.getEffectHandle()
-        elif event == '_plotThread_':
-            cs.displayPlot()
-        elif event == '_fpsThread_':
-            cs.displayFPS()
-        elif event == '_stripSaver_':
-            cs.preferences['stripSaver'] = values['_stripSaver_']
-            cs.getSaverHandle()
         elif event == '_freqGraph_':
             cs.freqSlider.movePoints(values['_freqGraph_'])
             cs.preferences['minFreq'] = cs.freqSlider.sliders[0]
@@ -954,15 +1013,55 @@ def main():
             cs.window.refresh()
         elif event == '_brightGraph_':
             cs.brightSlider.movePoints(values['_brightGraph_'])
-            cs.preferences['brightness'] = cs.brightSlider.sliders[0]
+            cs.preferences['brightness'] = int(cs.brightSlider.sliders[0])
             cs.displayPreferences()
             cs.window.refresh()
+        elif event == '_saturationGraph_':
+            cs.saturationSlider.movePoints(values['_saturationGraph_'])
+            cs.preferences['rainbowSat'] = int(cs.saturationSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_valueGraph_':
+            cs.valueSlider.movePoints(values['_valueGraph_'])
+            cs.preferences['rainbowVal'] = int(cs.valueSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_speedGraph_':
+            cs.speedSlider.movePoints(values['_speedGraph_'])
+            cs.preferences['rainbowSpeed'] = int(cs.speedSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_redGraph_':
+            cs.redSlider.movePoints(values['_redGraph_'])
+            cs.preferences['singleRed'] = int(cs.redSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_greenGraph_':
+            cs.greenSlider.movePoints(values['_greenGraph_'])
+            cs.preferences['singleGreen'] = int(cs.greenSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_blueGraph_':
+            cs.blueSlider.movePoints(values['_blueGraph_'])
+            cs.preferences['singleBlue'] = int(cs.blueSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_plotThread_':
+            cs.displayPlot()
+        elif event == '_fpsThread_':
+            cs.displayFPS()
+        elif event == '_stripSaver_':
+            cs.preferences['stripSaver'] = values['_stripSaver_']
+            cs.getSaverHandle()
         elif event == '_colorOrder_':
             cs.preferences['colorOrder'] = values['_colorOrder_']
             cs.freqSlider.colors='S'+cs.preferences['colorOrder']
             cs.freqSlider.drawSlider()
             cs.savePreferences()
             cs.window.refresh()
+        elif event == '_start_':
+            cs.preferences['start'] = not cs.preferences['start']
+            cs.setupStartButton()
         elif event == '_energyDisplay_' or event == '_scrollDisplay_' or event == '_spectrumDisplay_':
             cs.savePreferences()
             cs.audioStripDisplay = cs.energyDisplay if cs.preferences['energyDisplay'] else cs.scrollDisplay if cs.preferences['scrollDisplay'] else cs.spectrumDisplay
