@@ -269,12 +269,12 @@ class littleStar():
         self.age = self.age + 1
         if self.age < self.life//3:
             self.clr = [self.clr[i] + 3*self.tgtClr[i]/self.life for i in [0, 1, 2]]
-        elif self.age > self.life//3:
+        elif self.age > 2 * self.life//3:
             self.clr = [self.clr[i] - 3*self.tgtClr[i]/self.life for i in [0, 1, 2]]
 
         # self.clr = [clamp(i, 0, 255) for i in self.clr]
 
-        debugPrint("Star Position: " + str(self.pos) + " :  target Colour: " + str(self.tgtClr) + " :  current Colour: " + str(self.clr) + "\n")
+        debugPrint("Star Position: " + str(self.pos) + " :  lifeSpan: " + str(self.life) + " :  Age: " + str(self.age) + " :  target Colour: " + str(self.tgtClr) + " :  current Colour: " + str(self.clr) + "\n")
         
     def __init__(self, noPixels):
         self.noPixels = noPixels
