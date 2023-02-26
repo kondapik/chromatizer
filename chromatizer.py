@@ -260,6 +260,7 @@ class chromatizer():
     melFrq = []
     commSoc = []
     melBank = []
+    displayRefresh = [False, False] # 0 idx - flag to clear strip and 1 idx - condition to set the flag
 
     preferences = sg.UserSettings(filename=str(getPrefFile()))
 
@@ -367,7 +368,9 @@ class chromatizer():
         MAX_PIXELS_PER_PACKET = 126
         # Pixel indices
         idx = range(self.currPixels.shape[1])
-        idx = [i for i in idx if not np.array_equal(p[:, i], self.prevPixels[:, i])]
+        if not self.displayRefresh[0]:
+            idx = [i for i in idx if not np.array_equal(p[:, i], self.prevPixels[:, i])]
+        self.displayRefresh[0] = False
         n_packets = len(idx) // MAX_PIXELS_PER_PACKET + 1
         idx = np.array_split(idx, n_packets)
         for packet_indices in idx:
@@ -405,6 +408,10 @@ class chromatizer():
     def stripClear(self):
         #time.sleep(.05);
         debugPrint('inStripClear')
+        if self.currPixels == np.tile(0, (3, self.preferences['noPixels'])) and self.displayRefresh[1]:
+            self.displayRefresh[0] = True
+            self.displayRefresh[1] = False
+
         tmpPixels = self.currPixels[:, self.preferences['noPixels']//2:]
         # Scrolling effect window
         tmpPixels[:, 1:] = tmpPixels[:, :-1]
@@ -416,6 +423,9 @@ class chromatizer():
         # Update the LED strip
         # print('R {:.0f} G {:.0f} B {:.0f}'.format(r, g, b))
         self.currPixels = np.concatenate((tmpPixels[:, ::-1], tmpPixels), axis=1)
+
+    def stripTwinkle(self):
+        debugPrint('inStripTwinkle')
 
     def stripRainbow(self):
         debugPrint('inStripRainbow')
@@ -544,6 +554,7 @@ class chromatizer():
             self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
         else:
             self.readTimeout = 0
+            self.displayRefresh[1] = True
             audioLen = len(audioData)
             audioData *= self.hammingWindow
             # audioDataPadded = np.pad(audioData, ((2**int(np.ceil(np.log2(audioLen))) - audioLen)//2, (2**int(np.ceil(np.log2(audioLen))) - audioLen)//2), mode='constant')
@@ -717,6 +728,7 @@ class chromatizer():
         self.savePreferences()
         if self.preferences['clrClose']:
             self.currPixels = np.tile(0, (3, self.preferences['noPixels']))
+            self.displayRefresh[0] = True
             self.displayFunction()
         # self.plotThread.join()
         # self.fpsThread.join()
