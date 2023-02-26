@@ -45,6 +45,7 @@ from scipy.ndimage import gaussian_filter1d
 from math import ceil
 from time import time, sleep
 from colorsys import hsv_to_rgb
+from random import randrange
 # from threading import Thread, Timer
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -242,6 +243,43 @@ class graphSlider():
 
         self.frqGap = ceil(((sliderRange[1] - sliderRange[0])/(self.areaOfInterest[1] - self.areaOfInterest[0]))*(self.graph.get_bounding_box( self.points[0])[1][0] - self.graph.get_bounding_box(self.points[0])[0][0]))
         
+def clamp(n, minVal, maxVal):
+    return max(min(maxVal, n), minVal)
+
+class littleStar():
+    age = []
+    pos = []
+    tgtClr = [] # [r, g, b]
+    life = []
+    clr = []
+    noPixels = []
+
+    def newSpawn(self):
+        self.age = 0
+        self.pos = randrange(1, self.noPixels)
+        self.tgtClr = [randrange(0,255), randrange(0,150), randrange(0,255)]
+        self.clr = [0.0, 0.0, 0.0]
+        self.life = randrange(1, 800)
+        debugPrint("Star Position: " + str(self.pos) + " :  lifeSpan: " + str(self.life) + " :  target Colour: " + str(self.tgtClr) + " :  current Colour: " + str(self.clr) + "\n")
+
+    def starLife(self):
+        if self.age == self.life:
+            self.newSpawn()
+
+        self.age = self.age + 1
+        if self.age < self.life//3:
+            self.clr = [self.clr[i] + 3*self.tgtClr[i]/self.life for i in [0, 1, 2]]
+        elif self.age > self.life//3:
+            self.clr = [self.clr[i] - 3*self.tgtClr[i]/self.life for i in [0, 1, 2]]
+
+        # self.clr = [clamp(i, 0, 255) for i in self.clr]
+
+        debugPrint("Star Position: " + str(self.pos) + " :  target Colour: " + str(self.tgtClr) + " :  current Colour: " + str(self.clr) + "\n")
+        
+    def __init__(self, noPixels):
+        self.noPixels = noPixels
+        self.newSpawn()
+        
 
 class chromatizer():
 
@@ -261,6 +299,7 @@ class chromatizer():
     commSoc = []
     melBank = []
     displayRefresh = [False, False] # 0 idx - flag to clear strip and 1 idx - condition to set the flag
+    twinkleStars = []
 
     preferences = sg.UserSettings(filename=str(getPrefFile()))
 
@@ -408,7 +447,7 @@ class chromatizer():
     def stripClear(self):
         #time.sleep(.05);
         debugPrint('inStripClear')
-        if self.currPixels == np.tile(0, (3, self.preferences['noPixels'])) and self.displayRefresh[1]:
+        if (self.currPixels == np.tile(0, (3, self.preferences['noPixels']))).all() and self.displayRefresh[1]:
             self.displayRefresh[0] = True
             self.displayRefresh[1] = False
 
@@ -426,6 +465,24 @@ class chromatizer():
 
     def stripTwinkle(self):
         debugPrint('inStripTwinkle')
+        if (self.currPixels != np.tile(0.0, (3, self.preferences['noPixels']))).any() and self.displayRefresh[1]: #Clear the strip and stop when it is cleared
+            self.stripClear()
+            self.displayRefresh[0] = True
+            self.twinkleStars = [littleStar(self.preferences['noPixels']) for i in range(10)]
+        else:
+            self.displayRefresh[1] = False
+            tmpPixels = np.tile(0.0, (3, self.preferences['noPixels']))
+            for star in self.twinkleStars:
+                star.starLife()
+                tmpPixels[:, star.pos] = star.clr
+            
+            # Apply blur to smooth the edges and give 'glow'
+            tmpPixels[0, :] = gaussian_filter1d(tmpPixels[0, :], sigma=2.0)
+            tmpPixels[1, :] = gaussian_filter1d(tmpPixels[1, :], sigma=2.0)
+            tmpPixels[2, :] = gaussian_filter1d(tmpPixels[2, :], sigma=2.0)
+
+            self.currPixels = tmpPixels
+            
 
     def stripRainbow(self):
         debugPrint('inStripRainbow')
@@ -644,8 +701,8 @@ class chromatizer():
         tmpPixels[1, tmpLen:] = 0.0
         tmpPixels[2, :tmpLen] = self.preferences['singleBlue']
         tmpPixels[2, tmpLen:] = 0.0
-        self.ledFlt.update(tmpPixels)
-        tmpPixels = np.round(self.ledFlt.value)
+        # self.ledFlt.update(tmpPixels)
+        # tmpPixels = np.round(self.ledFlt.value)
 
         # Apply substantial blur to smooth the edges
         tmpPixels[0, :] = gaussian_filter1d(tmpPixels[0, :], sigma=4.0)
@@ -670,6 +727,8 @@ class chromatizer():
     def getSaverHandle(self):
         if self.preferences['stripSaver'] == 'None':
             self.stripSaver = self.stripClear
+        if self.preferences['stripSaver'] == 'Twinkle Stars':
+            self.stripSaver = self.stripTwinkle
         elif self.preferences['stripSaver'] == 'Rainbow':
             self.stripSaver = self.stripRainbow
 
@@ -841,7 +900,7 @@ class chromatizer():
                         [sg.Push(), sg.T('Blue: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_blueGraph_'), sg.Push()]]
 
         audioLayout =   [[sg.Canvas(key='_plot_', size=(800,200),background_color=tmpBackground, right_click_menu=['', ['Enable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']])],
-                        [sg.Sizer(60,3), sg.T('Select \'Strip\'saver: '), sg.Combo(['None','Rainbow'], default_value=self.preferences['stripSaver'], key='_stripSaver_', tooltip='Select what to show when audio level below min threshold.', enable_events=True, readonly=True),
+                        [sg.Sizer(60,3), sg.T('Select \'Strip\'saver: '), sg.Combo(['None','Rainbow', 'Twinkle Stars'], default_value=self.preferences['stripSaver'], key='_stripSaver_', tooltip='Select what to show when audio level below min threshold.', enable_events=True, readonly=True),
                         sg.Sizer(60,3), sg.Radio('Energy', 'vizEffect', default=self.preferences['energyDisplay'], enable_events=True, tooltip='Colors expand from the center corresponding to sound energy.', key='_energyDisplay_'),
                         sg.Sizer(60,3), sg.Radio('Scroll', 'vizEffect', default=self.preferences['scrollDisplay'], enable_events=True, tooltip='Colors originate in the center and scrolls outwards.', key='_scrollDisplay_'),
                         sg.Sizer(60,3), sg.Radio('Spectrum', 'vizEffect', default=self.preferences['spectrumDisplay'], enable_events=True, tooltip='Audio spectrum is mapped to strip.', key='_spectrumDisplay_'), sg.Push()]]
@@ -986,6 +1045,8 @@ class chromatizer():
 
         self.rainbowHue = 0
         self.rainbowFwd = 1
+
+        self.twinkleStars = [littleStar(self.preferences['noPixels']) for i in range(10)]
 
         self.gammaTable = np.copy(gammaDefault)
         self.displayFunction = self.sendToESP
