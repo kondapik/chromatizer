@@ -3,7 +3,7 @@ Title              : Chromatizer
 Description        : The Color of Music
 Author             : Kondapi Prasanth
 Created            : 09-Jul-2022
-Modified           : 19-Jul-2022
+Modified           : 27-Feb-2023
 Version            : 0
 Revision History   : 0
 
@@ -60,6 +60,7 @@ gammaDefault =  np.array([  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 _is_python_2 = int(platform.python_version_tuple()[0]) == 2
 runThread = True
 speedMap = interp1d([0, 100], [80, 0])
+starLifeMap = interp1d([5, 45], [300, 3000])
 
 def getPrefFile() -> pathlib.Path:
     """
@@ -252,19 +253,19 @@ class littleStar():
     tgtClr = [] # [r, g, b]
     life = []
     clr = []
-    noPixels = []
 
-    def newSpawn(self):
+    def newSpawn(self, noPixels, starMaxLife, starRed, starGreen, starBlue):
         self.age = 0
-        self.pos = randrange(1, self.noPixels)
-        self.tgtClr = [randrange(0,255), randrange(0,150), randrange(0,255)]
+        self.pos = randrange(1, noPixels)
+        self.tgtClr = [randrange(0, starRed), randrange(0,starGreen), randrange(0,starBlue)]
         self.clr = [0.0, 0.0, 0.0]
-        self.life = randrange(1, 800)
+        self.life = randrange(0,int(starLifeMap(starMaxLife)))
         debugPrint("Star Position: " + str(self.pos) + " :  lifeSpan: " + str(self.life) + " :  target Colour: " + str(self.tgtClr) + " :  current Colour: " + str(self.clr) + "\n")
 
-    def starLife(self):
+    def starLife(self, noPixels, starMaxLife, starRed, starGreen, starBlue):
         if self.age == self.life:
-            self.newSpawn()
+            debugPrint("End: Star Position: " + str(self.pos) + " :  lifeSpan: " + str(self.life) + "\n")
+            self.newSpawn(noPixels, starMaxLife, starRed, starGreen, starBlue)
 
         self.age = self.age + 1
         if self.age < self.life//3:
@@ -276,9 +277,8 @@ class littleStar():
 
         debugPrint("Star Position: " + str(self.pos) + " :  lifeSpan: " + str(self.life) + " :  Age: " + str(self.age) + " :  target Colour: " + str(self.tgtClr) + " :  current Colour: " + str(self.clr) + "\n")
         
-    def __init__(self, noPixels):
-        self.noPixels = noPixels
-        self.newSpawn()
+    def __init__(self, noPixels, starMaxLife, starRed, starGreen, starBlue):
+        self.newSpawn(noPixels, starMaxLife, starRed, starGreen, starBlue)
         
 
 class chromatizer():
@@ -353,6 +353,11 @@ class chromatizer():
         preferences['singleGreen'] = 95
         preferences['singleBlue'] = 31
         preferences['start'] = True
+        preferences['starMaxLife'] = 30.0
+        preferences['noStars'] = 10
+        preferences['starRed'] = 255
+        preferences['starGreen'] = 150
+        preferences['starBlue'] = 255
 
     def setupStartButton(self):
         if self.preferences['start']:
@@ -465,27 +470,30 @@ class chromatizer():
 
     def stripTwinkle(self):
         debugPrint('inStripTwinkle')
+        self.readTimeout = 10
         if (self.currPixels != np.tile(0.0, (3, self.preferences['noPixels']))).any() and self.displayRefresh[1]: #Clear the strip and stop when it is cleared
             self.stripClear()
             self.displayRefresh[0] = True
-            self.twinkleStars = [littleStar(self.preferences['noPixels']) for i in range(10)]
+            self.twinkleStars = [littleStar(self.preferences['noPixels'], self.preferences['starMaxLife'], self.preferences['starRed'], self.preferences['starGreen'], self.preferences['starBlue']) for i in range(self.preferences['noStars'])]
         else:
             self.displayRefresh[1] = False
             tmpPixels = np.tile(0.0, (3, self.preferences['noPixels']))
             for star in self.twinkleStars:
-                star.starLife()
+                star.starLife(self.preferences['noPixels'], self.preferences['starMaxLife'], self.preferences['starRed'], self.preferences['starGreen'], self.preferences['starBlue'])
                 tmpPixels[:, star.pos] = star.clr
             
             # Apply blur to smooth the edges and give 'glow'
-            tmpPixels[0, :] = gaussian_filter1d(tmpPixels[0, :], sigma=2.0)
-            tmpPixels[1, :] = gaussian_filter1d(tmpPixels[1, :], sigma=2.0)
-            tmpPixels[2, :] = gaussian_filter1d(tmpPixels[2, :], sigma=2.0)
+            tmpPixels[0, :] = gaussian_filter1d(tmpPixels[0, :], sigma=1.5)
+            tmpPixels[1, :] = gaussian_filter1d(tmpPixels[1, :], sigma=1.5)
+            tmpPixels[2, :] = gaussian_filter1d(tmpPixels[2, :], sigma=1.5)
 
             self.currPixels = tmpPixels
             
 
     def stripRainbow(self):
         debugPrint('inStripRainbow')
+        self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
+
         tmpPixels = np.copy(self.currPixels[:, self.preferences['noPixels']//2:])
         
         self.rainbowFwd = 1 if self.rainbowHue == 0 else 0 if self.rainbowHue == 1 else self.rainbowFwd
@@ -608,7 +616,6 @@ class chromatizer():
         if vol < self.preferences['volTol']:
             self.stripSaver()
             self.displayFunction()
-            self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
         else:
             self.readTimeout = 0
             self.displayRefresh[1] = True
@@ -690,6 +697,12 @@ class chromatizer():
         self.stripRainbow()
         self.displayFunction()
 
+    def twinkleEffect(self):
+        debugPrint('inTwinkleEffect')
+        self.readTimeout = 10
+        self.stripTwinkle()
+        self.displayFunction()
+
     def singleEffect(self):
         debugPrint('inSingleEffect')
         tmpPixels = self.currPixels[:, self.preferences['noPixels']//2:]
@@ -720,6 +733,9 @@ class chromatizer():
         elif self.preferences['displayEffect'] == 'Rainbow':
             self.displayEffect = self.rainbowEffect
             self.readTimeout = int(speedMap(self.preferences['rainbowSpeed']))
+        elif self.preferences['displayEffect'] == 'Twinkle Stars':
+            self.displayEffect = self.twinkleEffect
+            self.readTimeout = 10
         elif self.preferences['displayEffect'] == 'Single':
             self.displayEffect = self.singleEffect
             self.readTimeout = None
@@ -874,6 +890,11 @@ class chromatizer():
         self.preferences['rainbowSpeed'] = self.speedSlider.sliders[0]
         self.preferences['rainbowSat'] = self.saturationSlider.sliders[0]
         self.preferences['rainbowVal'] = self.valueSlider.sliders[0]
+        self.preferences['starMaxLife'] = self.lifeSlider.sliders[0]
+        self.preferences['noStars'] = self.starSlider.sliders[0]
+        self.preferences['starRed'] = self.starRedSlider.sliders[0]
+        self.preferences['starGreen'] = self.starGreenSlider.sliders[0]
+        self.preferences['starBlue'] = self.starBlueSlider.sliders[0]
 
     def __init__(self):
         debugPrint('in Init')
@@ -890,6 +911,18 @@ class chromatizer():
                         [sg.Push(), sg.T(' Speed Control (HSV)'.center(100,'-')), sg.Push()],
                         [sg.Graph(canvas_size=(800,40), graph_bottom_left=(0,0), graph_top_right=(800,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_speedGraph_')]]
         
+        twinkleLayout = [[sg.Sizer(20,5)],
+                        [sg.Push(), sg.T('No.of Stars:'.ljust(14,' ')), sg.Graph(canvas_size=(260,40), graph_bottom_left=(0,0), graph_top_right=(260,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_starGraph_'),
+                        sg.Sizer(20,3), sg.T('Max Lifespan:'.ljust(14,' ')), sg.Graph(canvas_size=(260,40), graph_bottom_left=(0,0), graph_top_right=(260,40), background_color=tmpBackground, enable_events=True, drag_submits=True, tooltip='Maximum life span of stars in seconds.', key='_lifeGraph_'), sg.Push()],
+                        [sg.Sizer(20,10)],
+                        [sg.Push(), sg.T('Maximum Color Value for each Star (RGB)'.center(100,'-')), sg.Push()],
+                        [sg.Sizer(20,5)],
+                        [sg.Push(), sg.T('Red: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_starRedGraph_'), sg.Push()],
+                        [sg.Sizer(20,verticalGap)],
+                        [sg.Push(), sg.T('Green: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_starGreenGraph_'), sg.Push()],
+                        [sg.Sizer(20,verticalGap)],
+                        [sg.Push(), sg.T('Blue: '.ljust(9,' ')), sg.Graph(canvas_size=(600,40), graph_bottom_left=(0,0), graph_top_right=(600,40), background_color=tmpBackground, enable_events=True, drag_submits=True, key='_starBlueGraph_'), sg.Push()]]
+
         singleLayout =  [[sg.Sizer(20,25)],
                         [sg.Push(), sg.T(' Color Control (RGB)'.center(100,'-')), sg.Push()],
                         [sg.Sizer(20,15)],
@@ -969,7 +1002,7 @@ class chromatizer():
         ctrlLayout =    [[sg.Sizer(60,3)],[sg.Push(),sg.B(button_text='Start', tooltip='Start the show.', enable_events=True, button_color='green', key='_start_',size=(10,1)), sg.Sizer(60,00), sg.T('Select audio source: '),
                         sg.Combo(list(self.audioDevices.keys())+['--Refresh Audio Devices--'], default_value=self.preferences['audioDevice'], key='_audioDevice_', tooltip='Select audio source.', enable_events=True, readonly=True),sg.Push()],
                         [sg.HorizontalSeparator()],
-                        [sg.Push(), sg.TabGroup([[sg.Tab('Audio', audioLayout, right_click_menu=['', ['Enable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']]), sg.Tab('Rainbow', rainbowLayout), sg.Tab('Single', singleLayout)]], size=(800,250), enable_events=True, key='_displayEffect_', tab_location='top'), sg.Push()],
+                        [sg.Push(), sg.TabGroup([[sg.Tab('Audio', audioLayout, right_click_menu=['', ['Enable Output Plot', 'Enable Freq., Plot', 'Enable Gain Plot']]), sg.Tab('Rainbow', rainbowLayout), sg.Tab('Twinkle Stars', twinkleLayout), sg.Tab('Single', singleLayout)]], size=(800,250), enable_events=True, key='_displayEffect_', tab_location='top'), sg.Push()],
                         [sg.Sizer(60,8)], [sg.Push(), sg.T('Color band order: '),
                         sg.Combo(['RGB','RBG', 'GRB', 'GBR', 'BRG', 'BGR'], default_value=self.preferences['colorOrder'], key='_colorOrder_', tooltip='Select color corresponding to Low, Mid and High band activations.', enable_events=True, readonly=True, size=(5,1)),
                         # sg.Combo(['RRR', 'RRG', 'RRB', 'RGR', 'RGG', 'RGB', 'RBR', 'RBG', 'RBB', 'GRR', 'GRG', 'GRB', 'GGR', 'GGG', 'GGB', 'GBR', 'GBG', 'GBB', 'BRR', 'BRG', 'BRB', 'BGR', 'BGG', 'BGB', 'BBR', 'BBG', 'BBB'], default_value=self.preferences['colorOrder'], key='_colorOrder_', tooltip='Select color corresponding to Low, Mid and High band activations.', enable_events=True, readonly=True, size=(5,1)),
@@ -1000,6 +1033,13 @@ class chromatizer():
         self.saturationSlider = graphSlider(self.window['_saturationGraph_'], sliderRange=(0,100), sliders=[self.preferences['rainbowSat']], colors='O', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
         self.valueSlider = graphSlider(self.window['_valueGraph_'], sliderRange=(0,100), sliders=[self.preferences['rainbowVal']], colors='C', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
         self.speedSlider = graphSlider(self.window['_speedGraph_'], sliderRange=(0,100), sliders=[self.preferences['rainbowSpeed']], colors='M', relativeHeight=20, lineWidth=5, leftPad=75, rightPad=140)
+
+        #* Creating Twinkle Star tab sliders
+        self.starSlider = graphSlider(self.window['_starGraph_'], sliderRange=(1,self.preferences['noPixels']), sliders=[self.preferences['noStars']], colors='O', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.lifeSlider = graphSlider(self.window['_lifeGraph_'], sliderRange=(5,45), sliders=[self.preferences['starMaxLife']], colors='C', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.starRedSlider = graphSlider(self.window['_starRedGraph_'], sliderRange=(0,255), sliders=[self.preferences['starRed']], colors='R', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.starGreenSlider = graphSlider(self.window['_starGreenGraph_'], sliderRange=(0,255), sliders=[self.preferences['starGreen']], colors='G', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
+        self.starBlueSlider = graphSlider(self.window['_starBlueGraph_'], sliderRange=(0,255), sliders=[self.preferences['starBlue']], colors='B', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
 
         #* Single Color Tab sliders
         self.redSlider = graphSlider(self.window['_redGraph_'], sliderRange=(0,255), sliders=[self.preferences['singleRed']], colors='R', relativeHeight=20, lineWidth=5, leftPad=15, rightPad=15)
@@ -1046,7 +1086,7 @@ class chromatizer():
         self.rainbowHue = 0
         self.rainbowFwd = 1
 
-        self.twinkleStars = [littleStar(self.preferences['noPixels']) for i in range(10)]
+        self.twinkleStars = [littleStar(self.preferences['noPixels'], self.preferences['starMaxLife'], self.preferences['starRed'], self.preferences['starGreen'], self.preferences['starBlue']) for i in range(self.preferences['noStars'])]
 
         self.gammaTable = np.copy(gammaDefault)
         self.displayFunction = self.sendToESP
@@ -1118,6 +1158,32 @@ def main():
         elif event == '_speedGraph_':
             cs.speedSlider.movePoints(values['_speedGraph_'])
             cs.preferences['rainbowSpeed'] = int(cs.speedSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_starGraph_':
+            cs.starSlider.movePoints(values['_starGraph_'])
+            cs.preferences['noStars'] = int(cs.starSlider.sliders[0])
+            cs.twinkleStars = [littleStar(cs.preferences['noPixels'], cs.preferences['starMaxLife'], cs.preferences['starRed'], cs.preferences['starGreen'], cs.preferences['starBlue']) for i in range(cs.preferences['noStars'])]
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_lifeGraph_':
+            cs.lifeSlider.movePoints(values['_lifeGraph_'])
+            cs.preferences['starMaxLife'] = int(cs.lifeSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_starRedGraph_':
+            cs.starRedSlider.movePoints(values['_starRedGraph_'])
+            cs.preferences['starRed'] = int(cs.starRedSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_starGreenGraph_':
+            cs.starGreenSlider.movePoints(values['_starGreenGraph_'])
+            cs.preferences['starGreen'] = int(cs.starGreenSlider.sliders[0])
+            cs.displayPreferences()
+            cs.window.refresh()
+        elif event == '_starBlueGraph_':
+            cs.starBlueSlider.movePoints(values['_starBlueGraph_'])
+            cs.preferences['starBlue'] = int(cs.starBlueSlider.sliders[0])
             cs.displayPreferences()
             cs.window.refresh()
         elif event == '_redGraph_':
